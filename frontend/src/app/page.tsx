@@ -1,103 +1,184 @@
-import Image from "next/image";
+"use client"
+import { useState } from 'react';
+import Link from 'next/link';
+import { FaPlay, FaHeart, FaShare, FaEllipsisH } from 'react-icons/fa';
+import Header from '@/components/Header';
+import Sidebar from '@/components/Sidebar';
+import PlayerBar from '@/components/PlayerBar';
+import { SearchModal } from '@/components/SearchModal';
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [activeItem, setActiveItem] = useState('home');
+  const [showSearch, setShowSearch] = useState(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const recommendedTracks = [
+    { 
+      id: 1, 
+      title: 'Рекомендуемый трек 1', 
+      artist: 'Исполнитель 1', 
+      duration: '3:45',
+      cover: '/track1.jpg',
+      plays: 1200
+    },
+    { 
+      id: 2, 
+      title: 'Рекомендуемый трек 2', 
+      artist: 'Исполнитель 2', 
+      duration: '4:20',
+      cover: '/track2.jpg',
+      plays: 980
+    },
+    { 
+      id: 3, 
+      title: 'Рекомендуемый трек 3', 
+      artist: 'Исполнитель 3', 
+      duration: '3:15',
+      cover: '/track3.jpg',
+      plays: 750
+    },
+    { 
+      id: 4, 
+      title: 'Рекомендуемый трек 4', 
+      artist: 'Исполнитель 4', 
+      duration: '4:05',
+      cover: '/track4.jpg',
+      plays: 620
+    }
+  ];
+
+  const newTracks = [
+    { 
+      id: 5, 
+      title: 'Новый трек 1', 
+      artist: 'Исполнитель 5', 
+      duration: '3:30',
+      cover: '/track5.jpg',
+      uploadDate: '2 дня назад'
+    },
+    { 
+      id: 6, 
+      title: 'Новый трек 2', 
+      artist: 'Исполнитель 6', 
+      duration: '4:15',
+      cover: '/track6.jpg',
+      uploadDate: '1 день назад'
+    },
+    { 
+      id: 7, 
+      title: 'Новый трек 3', 
+      artist: 'Исполнитель 7', 
+      duration: '3:50',
+      cover: '/track7.jpg',
+      uploadDate: '5 часов назад'
+    },
+    { 
+      id: 8, 
+      title: 'Новый трек 4', 
+      artist: 'Исполнитель 8', 
+      duration: '4:00',
+      cover: '/track8.jpg',
+      uploadDate: '1 час назад'
+    }
+  ];
+
+  const currentTrack = {
+    id: 1,
+    title: 'Текущий трек',
+    artist: 'Исполнитель',
+    cover: '/current.jpg',
+    duration: '3:45',
+    progress: 45
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-[#121212] to-black text-white">
+      <Header />
+      <Sidebar onSearchClick={() => setShowSearch(true)} />
+      
+      <main className="ml-64 pt-16">
+        <div className="container mx-auto px-8 py-8">
+          {/* Hero Section */}
+          <div className="mb-12">
+            <h1 className="text-4xl font-bold mb-4">Добро пожаловать</h1>
+            <p className="text-gray-400 text-lg">
+              Откройте для себя новую музыку и создавайте свои плейлисты
+            </p>
+          </div>
+
+          {/* Recommended Tracks Section */}
+          <div className="mb-12">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold">Рекомендуемые треки</h2>
+              <Link 
+                href="/recommended" 
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                Показать все
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {recommendedTracks.map(track => (
+                <div
+                  key={track.id}
+                  className="group relative bg-zinc-800/50 rounded-lg p-4 hover:bg-zinc-800/70 transition-colors"
+                >
+                  <div className="aspect-square rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 mb-4 overflow-hidden">
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-colors">
+                        <FaPlay className="text-white text-xl" />
+                      </button>
+                    </div>
+                  </div>
+                  <h3 className="font-medium mb-1 truncate">{track.title}</h3>
+                  <p className="text-sm text-gray-400 mb-2 truncate">{track.artist}</p>
+                  <div className="flex items-center justify-between text-sm text-gray-400">
+                    <span>{track.duration}</span>
+                    <span>{track.plays.toLocaleString()} прослушиваний</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* New Tracks Section */}
+          <div className="mb-12">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold">Новые треки</h2>
+              <Link 
+                href="/new" 
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                Показать все
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {newTracks.map(track => (
+                <div
+                  key={track.id}
+                  className="group relative bg-zinc-800/50 rounded-lg p-4 hover:bg-zinc-800/70 transition-colors"
+                >
+                  <div className="aspect-square rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 mb-4 overflow-hidden">
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-colors">
+                        <FaPlay className="text-white text-xl" />
+                      </button>
+                    </div>
+                  </div>
+                  <h3 className="font-medium mb-1 truncate">{track.title}</h3>
+                  <p className="text-sm text-gray-400 mb-2 truncate">{track.artist}</p>
+                  <div className="flex items-center justify-between text-sm text-gray-400">
+                    <span>{track.duration}</span>
+                    <span>{track.uploadDate}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+      <PlayerBar currentTrack={currentTrack} />
+      <SearchModal isOpen={showSearch} onClose={() => setShowSearch(false)} />
     </div>
   );
 }

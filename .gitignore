@@ -2,6 +2,8 @@
 .DS_Store
 Thumbs.db
 desktop.ini
+$RECYCLE.BIN/
+*.lnk
 
 # IDE and Editor Files
 .idea/
@@ -10,12 +12,35 @@ desktop.ini
 *.swo
 *~
 
+# Python Specific
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+audiobridge.db
+*.sqlite3
+*.db
+uploads/
+media/
+static/
+.pytest_cache/
+.coverage
+coverage.xml
+*.cover
+htmlcov/
+.tox/
+
 # Build and Dependency Directories
 node_modules/
 dist/
 build/
 out/
 venv/
+.env/
+.venv/
+ENV/
+env/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -47,7 +72,11 @@ pnpm-lock.yaml
 *.so
 *.dylib
 *.pyc
-__pycache__/
+*.pyo
+*.pyd
+*.obj
+*.o
+*.a
 
 # Temporary Files
 *.tmp
