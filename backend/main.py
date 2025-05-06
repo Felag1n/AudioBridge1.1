@@ -9,11 +9,12 @@ import os
 from dotenv import load_dotenv
 import shutil
 import uuid
-from sqlalchemy import create_engine, Column, String, DateTime, ForeignKey, Boolean
+from sqlalchemy import create_engine, Column, String, DateTime, ForeignKey, Boolean, Integer, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from fastapi.middleware.cors import CORSMiddleware
 import time
+from fastapi.staticfiles import StaticFiles
 
 # Load environment variables
 load_dotenv()
@@ -47,28 +48,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Spam protection
-class SpamProtection:
-    def __init__(self):
-        self.requests = {}
-        self.cooldown = 60  # seconds
-        self.max_requests = 5  # max requests per cooldown period
+# Mount static files
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-    def check_request(self, ip: str) -> bool:
-        current_time = time.time()
-        if ip not in self.requests:
-            self.requests[ip] = []
-        
-        # Remove old requests
-        self.requests[ip] = [t for t in self.requests[ip] if current_time - t < self.cooldown]
-        
-        if len(self.requests[ip]) >= self.max_requests:
-            return False
-        
-        self.requests[ip].append(current_time)
-        return True
+# File storage setup
+UPLOAD_DIR = "uploads"
+AVATAR_DIR = os.path.join(UPLOAD_DIR, "avatars")
+MUSIC_DIR = os.path.join(UPLOAD_DIR, "music")
+COVER_DIR = os.path.join(UPLOAD_DIR, "covers")
 
-spam_protection = SpamProtection()
+# Create necessary directories
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(AVATAR_DIR, exist_ok=True)
+os.makedirs(MUSIC_DIR, exist_ok=True)
+os.makedirs(COVER_DIR, exist_ok=True)
 
 # Database models
 class User(Base):
@@ -79,6 +72,8 @@ class User(Base):
     full_name = Column(String, nullable=True)
     disabled = Column(Boolean, default=False)
     hashed_password = Column(String, nullable=False)
+    avatar_path = Column(String, nullable=True)
+    nickname = Column(String, nullable=True)
 
 class Track(Base):
     __tablename__ = "tracks"
@@ -89,6 +84,8 @@ class Track(Base):
     file_path = Column(String, nullable=False)
     cover_path = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    plays = Column(Integer, default=0)
+    duration = Column(String, nullable=True)
 
 class Like(Base):
     __tablename__ = "likes"
@@ -106,10 +103,16 @@ class UserBase(BaseModel):
     username: str
     email: Optional[str] = None
     full_name: Optional[str] = None
-    disabled: Optional[bool] = None
+    nickname: Optional[str] = None
+    avatar_path: Optional[str] = None
 
 class UserCreate(UserBase):
     password: str
+
+class UserUpdate(BaseModel):
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    nickname: Optional[str] = None
 
 class UserInDB(UserBase):
     hashed_password: str
@@ -133,21 +136,14 @@ class TrackResponse(TrackBase):
     owner_username: str
     created_at: datetime
     cover_path: Optional[str] = None
+    file_path: str
+    plays: int
+    duration: Optional[str] = None
     likes_count: int = 0
     is_liked: bool = False
 
     class Config:
         from_attributes = True
-
-# File storage setup
-UPLOAD_DIR = "uploads"
-MUSIC_DIR = os.path.join(UPLOAD_DIR, "music")
-PREVIEW_DIR = os.path.join(UPLOAD_DIR, "preview")
-
-# Create necessary directories
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(MUSIC_DIR, exist_ok=True)
-os.makedirs(PREVIEW_DIR, exist_ok=True)
 
 # Database dependency
 def get_db():
@@ -198,10 +194,7 @@ def create_refresh_token(data: dict):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
-):
+async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -220,6 +213,7 @@ async def get_current_user(
         raise credentials_exception
     return user
 
+# Auth endpoints
 @app.post("/register", response_model=UserBase)
 async def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db_user = get_user(db, username=user.username)
@@ -234,8 +228,9 @@ async def register_user(user: UserCreate, db: Session = Depends(get_db)):
         username=user.username,
         email=user.email,
         full_name=user.full_name,
-        disabled=user.disabled,
-        hashed_password=hashed_password
+        disabled=False,
+        hashed_password=hashed_password,
+        nickname=user.nickname
     )
     
     db.add(db_user)
@@ -295,9 +290,46 @@ async def refresh_access_token(refresh_token: str, db: Session = Depends(get_db)
         "token_type": "bearer"
     }
 
+# Profile endpoints
 @app.get("/users/me", response_model=UserBase)
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+@app.put("/users/me", response_model=UserBase)
+async def update_user(
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    for field, value in user_update.dict(exclude_unset=True).items():
+        setattr(current_user, field, value)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+@app.post("/users/me/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not validate_image_file(file):
+        raise HTTPException(status_code=400, detail="Invalid file type. Only images are allowed.")
+    
+    # Generate unique filename
+    file_extension = os.path.splitext(file.filename)[1]
+    filename = f"{current_user.username}_{uuid.uuid4()}{file_extension}"
+    file_path = os.path.join(AVATAR_DIR, filename)
+    
+    # Save file
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # Update user avatar path
+    current_user.avatar_path = f"/uploads/avatars/{filename}"
+    db.commit()
+    
+    return {"avatar_path": current_user.avatar_path}
 
 # Track endpoints
 @app.post("/tracks/upload", response_model=TrackResponse)
@@ -309,61 +341,46 @@ async def upload_track(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Spam protection
-    if not spam_protection.check_request(request.client.host):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many requests. Please try again later."
-        )
-
-    # Validate audio file
     if not validate_audio_file(file):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid audio file format. Only MP3 files are allowed."
-        )
-
-    # Validate cover image if provided
+        raise HTTPException(status_code=400, detail="Invalid file type. Only MP3 files are allowed.")
+    
+    # Generate unique filenames
+    track_id = str(uuid.uuid4())
+    file_extension = os.path.splitext(file.filename)[1]
+    track_filename = f"{track_id}{file_extension}"
+    track_path = os.path.join(MUSIC_DIR, track_filename)
+    
+    # Save track file
+    with open(track_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # Handle cover if provided
     cover_path = None
     if cover:
         if not validate_image_file(cover):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid cover image format. Only JPEG and PNG are allowed."
-            )
-        
-        cover_id = str(uuid.uuid4())
-        cover_path = os.path.join(PREVIEW_DIR, f"{cover_id}.{cover.filename.split('.')[-1]}")
-        
+            raise HTTPException(status_code=400, detail="Invalid cover file type. Only images are allowed.")
+        cover_extension = os.path.splitext(cover.filename)[1]
+        cover_filename = f"{track_id}{cover_extension}"
+        cover_path = os.path.join(COVER_DIR, cover_filename)
         with open(cover_path, "wb") as buffer:
             shutil.copyfileobj(cover.file, buffer)
-
-    # Save audio file
-    track_id = str(uuid.uuid4())
-    file_path = os.path.join(MUSIC_DIR, f"{track_id}.mp3")
+        cover_path = f"/uploads/covers/{cover_filename}"
     
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    db_track = Track(
+    # Create track record
+    track = Track(
         id=track_id,
         name=name,
         owner_username=current_user.username,
-        file_path=file_path,
-        cover_path=cover_path
+        file_path=f"/uploads/music/{track_filename}",
+        cover_path=cover_path,
+        duration="0:00"  # You might want to add actual duration calculation
     )
     
-    db.add(db_track)
+    db.add(track)
     db.commit()
-    db.refresh(db_track)
+    db.refresh(track)
     
-    return TrackResponse(
-        id=db_track.id,
-        name=db_track.name,
-        owner_username=db_track.owner_username,
-        created_at=db_track.created_at,
-        cover_path=db_track.cover_path
-    )
+    return track
 
 @app.delete("/tracks/{track_id}")
 async def delete_track(
@@ -371,27 +388,46 @@ async def delete_track(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    db_track = db.query(Track).filter(Track.id == track_id).first()
-    if not db_track:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Track not found"
-        )
+    track = db.query(Track).filter(Track.id == track_id).first()
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+    if track.owner_username != current_user.username:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this track")
     
-    if current_user.username != db_track.owner_username and current_user.username != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to delete this track"
-        )
+    # Delete files
+    if track.file_path:
+        try:
+            os.remove(os.path.join(UPLOAD_DIR, track.file_path.lstrip("/uploads/")))
+        except:
+            pass
+    if track.cover_path:
+        try:
+            os.remove(os.path.join(UPLOAD_DIR, track.cover_path.lstrip("/uploads/")))
+        except:
+            pass
     
-    # Delete file
-    if os.path.exists(db_track.file_path):
-        os.remove(db_track.file_path)
-    
-    db.delete(db_track)
+    # Delete track record
+    db.delete(track)
     db.commit()
     
     return {"message": "Track deleted successfully"}
+
+@app.get("/tracks", response_model=List[TrackResponse])
+async def list_tracks(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    tracks = db.query(Track).filter(Track.owner_username == current_user.username).all()
+    
+    # Add likes count and is_liked status
+    for track in tracks:
+        track.likes_count = db.query(Like).filter(Like.track_id == track.id).count()
+        track.is_liked = db.query(Like).filter(
+            Like.track_id == track.id,
+            Like.username == current_user.username
+        ).first() is not None
+    
+    return tracks
 
 @app.post("/tracks/{track_id}/like")
 async def like_track(
@@ -399,13 +435,9 @@ async def like_track(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Check if track exists
     track = db.query(Track).filter(Track.id == track_id).first()
     if not track:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Track not found"
-        )
+        raise HTTPException(status_code=404, detail="Track not found")
     
     # Check if already liked
     existing_like = db.query(Like).filter(
@@ -414,10 +446,7 @@ async def like_track(
     ).first()
     
     if existing_like:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Track already liked"
-        )
+        raise HTTPException(status_code=400, detail="Track already liked")
     
     # Create new like
     like = Like(
@@ -437,109 +466,71 @@ async def unlike_track(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Check if like exists
     like = db.query(Like).filter(
         Like.track_id == track_id,
         Like.username == current_user.username
     ).first()
     
     if not like:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Like not found"
-        )
+        raise HTTPException(status_code=404, detail="Like not found")
     
     db.delete(like)
     db.commit()
     
-    return {"message": "Like removed successfully"}
+    return {"message": "Track unliked successfully"}
 
 @app.get("/tracks/liked", response_model=List[TrackResponse])
 async def get_liked_tracks(
-    token: str = Depends(oauth2_scheme),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token"
-            )
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
-    
     liked_tracks = db.query(Track).join(Like).filter(
-        Like.username == username
+        Like.username == current_user.username
     ).all()
     
-    if not liked_tracks:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No liked tracks found"
-        )
+    # Add likes count and is_liked status
+    for track in liked_tracks:
+        track.likes_count = db.query(Like).filter(Like.track_id == track.id).count()
+        track.is_liked = True
     
-    return [TrackResponse(
-        id=track.id,
-        name=track.name,
-        owner_username=track.owner_username,
-        created_at=track.created_at,
-        cover_path=track.cover_path,
-        likes_count=db.query(Like).filter(Like.track_id == track.id).count(),
-        is_liked=True
-    ) for track in liked_tracks]
+    return liked_tracks
 
-@app.get("/tracks", response_model=List[TrackResponse])
-async def list_tracks(
+# Statistics endpoints
+@app.get("/users/me/stats")
+async def get_user_stats(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    tracks = db.query(Track).all()
-    if not tracks:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No tracks available"
-        )
+    # Get total tracks
+    total_tracks = db.query(Track).filter(Track.owner_username == current_user.username).count()
     
-    return [TrackResponse(
-        id=track.id,
-        name=track.name,
-        owner_username=track.owner_username,
-        created_at=track.created_at,
-        cover_path=track.cover_path,
-        likes_count=db.query(Like).filter(Like.track_id == track.id).count(),
-        is_liked=db.query(Like).filter(
-            Like.track_id == track.id,
-            Like.username == current_user.username
-        ).first() is not None
-    ) for track in tracks]
+    # Get total plays
+    total_plays = db.query(Track).filter(
+        Track.owner_username == current_user.username
+    ).with_entities(func.sum(Track.plays)).scalar() or 0
+    
+    # Get total likes
+    total_likes = db.query(Like).join(Track).filter(
+        Track.owner_username == current_user.username
+    ).count()
+    
+    return {
+        "total_tracks": total_tracks,
+        "total_plays": total_plays,
+        "total_likes": total_likes
+    }
 
-@app.get("/tracks/{track_id}", response_model=TrackResponse)
-async def get_track(
+# Track playback endpoint
+@app.post("/tracks/{track_id}/play")
+async def increment_play_count(
     track_id: str,
-    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     track = db.query(Track).filter(Track.id == track_id).first()
     if not track:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Track not found"
-        )
+        raise HTTPException(status_code=404, detail="Track not found")
     
-    return TrackResponse(
-        id=track.id,
-        name=track.name,
-        owner_username=track.owner_username,
-        created_at=track.created_at,
-        cover_path=track.cover_path,
-        likes_count=db.query(Like).filter(Like.track_id == track.id).count(),
-        is_liked=db.query(Like).filter(
-            Like.track_id == track.id,
-            Like.username == current_user.username
-        ).first() is not None
-    ) 
+    track.plays += 1
+    db.commit()
+    
+    return {"message": "Play count incremented successfully"} 

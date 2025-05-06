@@ -1,17 +1,38 @@
 "use client"
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { FaUser, FaMusic, FaEdit, FaTrash, FaHeart, FaShare, FaCamera, FaPlay } from 'react-icons/fa';
 import { IoMdAdd } from 'react-icons/io';
+import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
 
 export default function ProfilePage() {
+  const { isAuthenticated, user } = useAuth();
+  const router = useRouter();
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [username, setUsername] = useState('Мой профиль');
-  const [nickname, setNickname] = useState('@username');
+  const [username, setUsername] = useState('');
+  const [nickname, setNickname] = useState('');
   const [avatar, setAvatar] = useState('/default-avatar.jpg');
   const [trackCover, setTrackCover] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      if (!isAuthenticated) {
+        router.replace('/auth/login');
+      }
+    };
+    checkAuth();
+  }, [isAuthenticated, router]);
+
+  useEffect(() => {
+    if (user) {
+      setUsername(user.username || 'Мой профиль');
+      setNickname(user.nickname || `@${user.username}`);
+      setAvatar(user.avatar_path || '/default-avatar.jpg');
+    }
+  }, [user]);
 
   const [tracks, setTracks] = useState([
     {

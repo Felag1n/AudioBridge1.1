@@ -3,14 +3,19 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { FaGoogle, FaGithub, FaFacebook } from 'react-icons/fa';
 import Header from '@/components/Header';
+import { apiClient } from '@/lib/api';
+import { useRouter } from 'next/navigation';
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [formData, setFormData] = useState({
     username: '',
     email: '',
     password: '',
     confirmPassword: ''
   });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -20,10 +25,35 @@ export default function RegisterPage() {
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Здесь будет логика регистрации
-    console.log('Registration attempt:', formData);
+    setError('');
+    setLoading(true);
+
+    if (formData.password !== formData.confirmPassword) {
+      setError('Пароли не совпадают');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const success = await apiClient.register({
+        username: formData.username,
+        password: formData.password,
+        email: formData.email
+      });
+
+      if (success) {
+        router.push('/profile');
+      } else {
+        setError('Ошибка при регистрации');
+      }
+    } catch (err) {
+      console.error('Registration error:', err);
+      setError('Ошибка при регистрации');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -42,6 +72,12 @@ export default function RegisterPage() {
             </p>
           </div>
 
+          {error && (
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+              {error}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-400 mb-1">
@@ -55,6 +91,7 @@ export default function RegisterPage() {
                 className="w-full bg-[#121212] rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
                 placeholder="Введите имя пользователя"
                 required
+                disabled={loading}
               />
             </div>
 
@@ -70,6 +107,7 @@ export default function RegisterPage() {
                 className="w-full bg-[#121212] rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
                 placeholder="Введите email"
                 required
+                disabled={loading}
               />
             </div>
 
@@ -85,6 +123,7 @@ export default function RegisterPage() {
                 className="w-full bg-[#121212] rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
                 placeholder="Введите пароль"
                 required
+                disabled={loading}
               />
             </div>
 
@@ -100,6 +139,7 @@ export default function RegisterPage() {
                 className="w-full bg-[#121212] rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
                 placeholder="Подтвердите пароль"
                 required
+                disabled={loading}
               />
             </div>
 
@@ -109,6 +149,7 @@ export default function RegisterPage() {
                 id="terms"
                 className="w-4 h-4 rounded border-gray-600 bg-[#121212] text-purple-500 focus:ring-purple-500"
                 required
+                disabled={loading}
               />
               <label htmlFor="terms" className="ml-2 text-sm text-gray-400">
                 Я согласен с{' '}
@@ -120,9 +161,10 @@ export default function RegisterPage() {
 
             <button
               type="submit"
-              className="w-full py-3 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 text-white hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-[1.02]"
+              className="w-full py-3 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 text-white hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={loading}
             >
-              Зарегистрироваться
+              {loading ? 'Регистрация...' : 'Зарегистрироваться'}
             </button>
           </form>
 
@@ -139,15 +181,27 @@ export default function RegisterPage() {
             </div>
 
             <div className="mt-6 grid grid-cols-3 gap-3">
-              <button className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#121212] text-gray-400 hover:text-white hover:bg-zinc-800/50 transition-colors">
+              <button 
+                type="button"
+                className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#121212] text-gray-400 hover:text-white hover:bg-zinc-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading}
+              >
                 <FaGoogle />
                 <span>Google</span>
               </button>
-              <button className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#121212] text-gray-400 hover:text-white hover:bg-zinc-800/50 transition-colors">
+              <button 
+                type="button"
+                className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#121212] text-gray-400 hover:text-white hover:bg-zinc-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading}
+              >
                 <FaGithub />
                 <span>GitHub</span>
               </button>
-              <button className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#121212] text-gray-400 hover:text-white hover:bg-zinc-800/50 transition-colors">
+              <button 
+                type="button"
+                className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#121212] text-gray-400 hover:text-white hover:bg-zinc-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading}
+              >
                 <FaFacebook />
                 <span>Facebook</span>
               </button>
