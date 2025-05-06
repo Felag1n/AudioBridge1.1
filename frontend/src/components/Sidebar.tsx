@@ -1,6 +1,7 @@
 "use client"
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { 
   FaHome, 
   FaSearch, 
@@ -16,6 +17,13 @@ interface SidebarProps {
 
 export default function Sidebar({ onSearchClick }: SidebarProps) {
   const [activeItem, setActiveItem] = useState('home');
+  const router = useRouter();
+
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    router.replace('/auth/login');
+  };
 
   const menuItems = [
     { id: 'home', icon: FaHome, label: 'Главная', href: '/' },
@@ -73,7 +81,10 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
             <FaUser className="text-xl" />
             <span>Профиль</span>
           </Link>
-          <button className="w-full flex items-center gap-4 px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-zinc-800/50 transition-colors">
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center gap-4 px-4 py-2 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/20 transition-colors"
+          >
             <FaSignOutAlt className="text-xl" />
             <span>Выйти</span>
           </button>

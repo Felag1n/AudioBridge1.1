@@ -1,39 +1,26 @@
 "use client"
 import { useState, useRef, useEffect } from 'react';
-import { FaUser, FaMusic, FaEdit, FaTrash, FaHeart, FaShare, FaCamera, FaPlay } from 'react-icons/fa';
+import { FaUser, FaMusic, FaEdit, FaTrash, FaHeart, FaShare, FaCamera, FaPlay, FaSignOutAlt } from 'react-icons/fa';
 import { IoMdAdd } from 'react-icons/io';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
+import { apiClient } from '@/lib/api';
+import Sidebar from '@/components/Sidebar';
+import { SearchModal } from '@/components/SearchModal';
 
 export default function ProfilePage() {
   const { isAuthenticated, user } = useAuth();
   const router = useRouter();
+  
+  // Все useState хуки должны быть объявлены в начале компонента
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [username, setUsername] = useState('');
   const [nickname, setNickname] = useState('');
-  const [avatar, setAvatar] = useState('/default-avatar.jpg');
+  const [avatar, setAvatar] = useState('/images/default-avatar.jpg');
   const [trackCover, setTrackCover] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const coverInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      if (!isAuthenticated) {
-        router.replace('/auth/login');
-      }
-    };
-    checkAuth();
-  }, [isAuthenticated, router]);
-
-  useEffect(() => {
-    if (user) {
-      setUsername(user.username || 'Мой профиль');
-      setNickname(user.nickname || `@${user.username}`);
-      setAvatar(user.avatar_path || '/default-avatar.jpg');
-    }
-  }, [user]);
-
+  const [loading, setLoading] = useState(true);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [tracks, setTracks] = useState([
     {
       id: 1,
@@ -56,6 +43,90 @@ export default function ProfilePage() {
       coverUrl: '/track-cover2.jpg'
     }
   ]);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        router.replace('/auth/login');
+        return;
+      }
+
+      try {
+        const userData = await apiClient.getProfile();
+        if (!userData) {
+          throw new Error('Failed to get user data');
+        }
+        setUsername(userData.username || 'Мой профиль');
+        setNickname(userData.nickname || `@${userData.username}`);
+        setAvatar(userData.avatar_path ? `${process.env.NEXT_PUBLIC_API_URL}${userData.avatar_path}` : '/images/default-avatar.jpg');
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        router.replace('/auth/login');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [router]);
+
+  const handleSaveProfile = async () => {
+    try {
+      const updatedData = {
+        username,
+        nickname: nickname.replace('@', '')
+      };
+      await apiClient.updateProfile(updatedData);
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Error updating profile:', error);
+    }
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      try {
+        setUploadingAvatar(true);
+        const result = await apiClient.uploadAvatar(file);
+        if (result.avatar_path) {
+          setAvatar(`${process.env.NEXT_PUBLIC_API_URL}${result.avatar_path}`);
+        }
+      } catch (error) {
+        console.error('Error uploading avatar:', error);
+      } finally {
+        setUploadingAvatar(false);
+      }
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    router.replace('/auth/login');
+  };
+
+  const handleSearchClick = () => {
+    setIsSearchModalOpen(true);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#121212] to-black text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500 mx-auto mb-4"></div>
+          <p>Загрузка профиля...</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleUploadClick = () => {
     setShowUploadModal(true);
@@ -67,17 +138,6 @@ export default function ProfilePage() {
 
   const handleAvatarClick = () => {
     fileInputRef.current?.click();
-  };
-
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAvatar(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
   };
 
   const handleCoverClick = () => {
@@ -95,15 +155,16 @@ export default function ProfilePage() {
     }
   };
 
-  const handleSaveProfile = () => {
-    setIsEditing(false);
-    // Здесь будет логика сохранения профиля
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#121212] to-black text-white">
+      <Sidebar onSearchClick={handleSearchClick} />
+      <SearchModal 
+        isOpen={isSearchModalOpen} 
+        onClose={() => setIsSearchModalOpen(false)} 
+      />
+      
       {/* Profile Header */}
-      <div className="relative">
+      <div className="relative ml-64">
         <div className="absolute inset-0 bg-gradient-to-b from-purple-900/20 to-transparent h-64" />
         <div className="relative container mx-auto px-4 py-8">
           <div className="flex flex-col md:flex-row items-center gap-8">
@@ -123,7 +184,11 @@ export default function ProfilePage() {
                   <FaUser className="text-white text-6xl" />
                 )}
                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <FaCamera className="text-white text-3xl" />
+                  {uploadingAvatar ? (
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-white"></div>
+                  ) : (
+                    <FaCamera className="text-white text-3xl" />
+                  )}
                 </div>
               </div>
               <input
@@ -170,13 +235,15 @@ export default function ProfilePage() {
                 <div className="space-y-4">
                   <h1 className="text-4xl font-bold">{username}</h1>
                   <p className="text-gray-400 text-xl">{nickname}</p>
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800/50 text-gray-400 hover:text-white transition-colors mx-auto md:mx-0"
-                  >
-                    <FaEdit />
-                    <span>Редактировать профиль</span>
-                  </button>
+                  <div className="flex gap-4 justify-center md:justify-start">
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800/50 text-gray-400 hover:text-white transition-colors"
+                    >
+                      <FaEdit />
+                      <span>Редактировать профиль</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -185,7 +252,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Stats Section */}
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-8 ml-64">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-zinc-800/50 backdrop-blur-sm rounded-xl p-6 shadow-lg hover:bg-zinc-800/70 transition-colors">
             <h3 className="text-3xl font-bold mb-2">{tracks.length}</h3>
