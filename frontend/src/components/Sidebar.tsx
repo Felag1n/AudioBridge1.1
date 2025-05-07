@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   FaHome, 
   FaSearch, 
@@ -18,6 +19,7 @@ interface SidebarProps {
 export default function Sidebar({ onSearchClick }: SidebarProps) {
   const [activeItem, setActiveItem] = useState('home');
   const router = useRouter();
+  const { isAuthenticated, user } = useAuth();
 
   const handleLogout = () => {
     localStorage.removeItem('access_token');
@@ -73,22 +75,24 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
         </nav>
 
         {/* User Section */}
-        <div className="border-t border-gray-800 pt-4">
-          <Link
-            href="/profile"
-            className="flex items-center gap-4 px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-zinc-800/50 transition-colors"
-          >
-            <FaUser className="text-xl" />
-            <span>Профиль</span>
-          </Link>
-          <button 
-            onClick={handleLogout}
-            className="w-full flex items-center gap-4 px-4 py-2 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/20 transition-colors"
-          >
-            <FaSignOutAlt className="text-xl" />
-            <span>Выйти</span>
-          </button>
-        </div>
+        {isAuthenticated && (
+          <div className="border-t border-gray-800 pt-4">
+            <Link
+              href="/profile"
+              className="flex items-center gap-4 px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-zinc-800/50 transition-colors"
+            >
+              <FaUser className="text-xl" />
+              <span>{user?.username || 'Профиль'}</span>
+            </Link>
+            <button 
+              onClick={handleLogout}
+              className="w-full flex items-center gap-4 px-4 py-2 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/20 transition-colors"
+            >
+              <FaSignOutAlt className="text-xl" />
+              <span>Выйти</span>
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );
