@@ -1,12 +1,14 @@
 "use client"
 import { useState, useRef, useEffect } from 'react';
-import { FaUser, FaMusic, FaEdit, FaTrash, FaHeart, FaShare, FaCamera, FaPlay, FaSignOutAlt } from 'react-icons/fa';
+import { FaUser, FaMusic, FaEdit, FaTrash, FaHeart, FaShare, FaCamera, FaPlay, FaSignOutAlt, FaPause, FaRegHeart, FaUpload } from 'react-icons/fa';
 import { IoMdAdd } from 'react-icons/io';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
 import { SearchModal } from '@/components/SearchModal';
+import PlayerBar from '@/components/PlayerBar';
+import { useAudio } from '@/contexts/AudioContext';
 
 interface Track {
   id: string;
@@ -21,8 +23,14 @@ interface Track {
   is_liked: boolean;
 }
 
+interface UserData {
+  username: string;
+  email: string;
+  avatar_path: string | null;
+}
+
 export default function ProfilePage() {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, logout } = useAuth();
   const router = useRouter();
   
   // Все useState хуки должны быть объявлены в начале компонента
@@ -36,6 +44,10 @@ export default function ProfilePage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const { currentTrack, isPlaying, playTrack, togglePlayPause } = useAudio();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -87,6 +99,47 @@ export default function ProfilePage() {
 
     checkAuth();
   }, [router]);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setUserData(data);
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      }
+    };
+
+    const fetchTracks = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+          }
+        });
+        if (response.ok) {
+          const allTracks = await response.json();
+          // Фильтруем треки, принадлежащие текущему пользователю
+          const userTracks = allTracks.filter((track: Track) => track.owner_username === userData?.username);
+          setTracks(userTracks);
+        }
+      } catch (error) {
+        console.error('Error fetching tracks:', error);
+      }
+    };
+
+    if (isAuthenticated) {
+      fetchUserData();
+      fetchTracks();
+    }
+  }, [isAuthenticated, userData?.username]);
 
   const handleSaveProfile = async () => {
     try {
@@ -240,6 +293,84 @@ export default function ProfilePage() {
     }
   };
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks/upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        },
+        body: formData,
+        onUploadProgress: (progressEvent) => {
+          const progress = (progressEvent.loaded / progressEvent.total) * 100;
+          setUploadProgress(progress);
+        },
+      });
+
+      if (response.ok) {
+        const newTrack = await response.json();
+        setTracks([...tracks, newTrack]);
+      }
+    } catch (error) {
+      console.error('Error uploading track:', error);
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
+  };
+
+  const handlePlayPause = (track: Track) => {
+    if (currentTrack?.id === track.id) {
+      togglePlayPause();
+    } else {
+      playTrack(track);
+    }
+  };
+
+  const handleLike = async (trackId: string) => {
+    try {
+      const track = tracks.find(t => t.id === trackId);
+      if (!track) return;
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/tracks/${trackId}/like`,
+        {
+          method: track.is_liked ? 'DELETE' : 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        setTracks(tracks.map(t => 
+          t.id === trackId 
+            ? { 
+                ...t, 
+                is_liked: !t.is_liked,
+                likes_count: t.is_liked ? t.likes_count - 1 : t.likes_count + 1
+              }
+            : t
+        ));
+      }
+    } catch (error) {
+      console.error('Error toggling like:', error);
+    }
+  };
+
+  const handleTrackClick = (trackId: string) => {
+    router.push(`/track/${trackId}`);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#121212] to-black text-white">
       <Sidebar onSearchClick={handleSearchClick} />
@@ -388,7 +519,19 @@ export default function ProfilePage() {
                     <FaMusic className="text-white text-2xl" />
                   )}
                   <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <FaPlay className="text-white text-xl" />
+                    <div 
+                      className="flex items-center gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePlayPause(track);
+                      }}
+                    >
+                      {currentTrack?.id === track.id && isPlaying ? (
+                        <FaPause className="text-white text-xl" />
+                      ) : (
+                        <FaPlay className="text-white text-xl" />
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="flex-1 min-w-0">
@@ -402,8 +545,16 @@ export default function ProfilePage() {
                   </div>
                   <div className="text-sm text-gray-400">{track.plays} прослушиваний</div>
                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button className="p-2 text-gray-400 hover:text-white transition-colors">
-                      <FaHeart />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleLike(track.id);
+                      }}
+                      className={`p-2 text-gray-400 hover:text-white transition-colors ${
+                        track.is_liked ? 'text-red-500 hover:text-red-600' : ''
+                      }`}
+                    >
+                      {track.is_liked ? <FaHeart /> : <FaRegHeart />}
                     </button>
                     <button className="p-2 text-gray-400 hover:text-white transition-colors">
                       <FaShare />
@@ -413,7 +564,10 @@ export default function ProfilePage() {
                     </button>
                     <button 
                       className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                      onClick={() => handleDeleteTrack(track.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteTrack(track.id);
+                      }}
                     >
                       <FaTrash />
                     </button>
@@ -519,6 +673,7 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
+      <PlayerBar />
     </div>
   );
 } 

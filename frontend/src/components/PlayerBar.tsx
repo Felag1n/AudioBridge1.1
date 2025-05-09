@@ -1,207 +1,143 @@
 "use client"
-import { FaPlay, FaPause, FaStepBackward, FaStepForward, FaVolumeUp, FaVolumeMute, FaRandom, FaRedo } from 'react-icons/fa';
-import * as Slider from '@radix-ui/react-slider';
-import * as Tooltip from '@radix-ui/react-tooltip';
-import { useState } from 'react';
+import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaVolumeUp, FaVolumeMute } from 'react-icons/fa';
+import { useAudio } from '@/contexts/AudioContext';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
-interface PlayerBarProps {
-  currentTrack: {
-    title: string;
-    artist: string;
-    coverUrl?: string;
+export default function PlayerBar() {
+  const router = useRouter();
+  const {
+    currentTrack,
+    isPlaying,
+    currentTime,
+    duration,
+    volume,
+    isMuted,
+    togglePlayPause,
+    setVolume,
+    toggleMute,
+    seekTo,
+    audioRef
+  } = useAudio();
+
+  const [plays, setPlays] = useState<number>(0);
+
+  useEffect(() => {
+    if (currentTrack) {
+      setPlays(currentTrack.plays || 0);
+    }
+  }, [currentTrack]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const handlePause = async () => {
+      if (currentTrack) {
+        try {
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks/${currentTrack.id}/play-complete`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+            }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            console.log('Play count updated:', data.plays);
+          }
+        } catch (error) {
+          console.error('Error updating play count:', error);
+        }
+      }
+    };
+
+    audio.addEventListener('pause', handlePause);
+    return () => {
+      audio.removeEventListener('pause', handlePause);
+    };
+  }, [currentTrack, audioRef]);
+
+  if (!currentTrack) {
+    return null;
+  }
+
+  const formatTime = (time: number) => {
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
-}
 
-export default function PlayerBar({ currentTrack }: PlayerBarProps) {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVolume] = useState(80);
-  const [isMuted, setIsMuted] = useState(false);
-  const [progress, setProgress] = useState(30);
-  const [isShuffle, setIsShuffle] = useState(false);
-  const [isRepeat, setIsRepeat] = useState(false);
-
-  const handleProgressChange = (value: number[]) => {
-    setProgress(value[0]);
-  };
-
-  const handleVolumeChange = (value: number[]) => {
-    setVolume(value[0]);
+  const handleCoverClick = () => {
+    router.push(`/track/${currentTrack.id}`);
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 h-24 bg-gradient-to-b from-[#181818] to-[#121212] border-t border-gray-800 flex items-center px-6">
-      {/* Track Info */}
-      <div className="flex items-center w-1/4">
-        <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg mr-4 overflow-hidden">
-          {currentTrack.coverUrl ? (
-            <img src={currentTrack.coverUrl} alt={currentTrack.title} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <FaPlay className="text-white/50 text-2xl" />
-            </div>
-          )}
-        </div>
-        <div className="min-w-0">
-          <h4 className="font-medium text-white truncate">{currentTrack.title}</h4>
-          <p className="text-sm text-gray-400 truncate">{currentTrack.artist}</p>
-        </div>
-      </div>
-
-      {/* Player Controls */}
-      <div className="flex-1 flex flex-col items-center">
-        <div className="flex items-center gap-6 mb-2">
-          <Tooltip.Provider>
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <button 
-                  className={`p-2 rounded-full transition-colors ${isShuffle ? 'text-green-500 hover:text-green-400' : 'text-gray-400 hover:text-white'}`}
-                  onClick={() => setIsShuffle(!isShuffle)}
-                >
-                  <FaRandom className="text-xl" />
-                </button>
-              </Tooltip.Trigger>
-              <Tooltip.Portal>
-                <Tooltip.Content 
-                  className="bg-black/90 text-white px-3 py-1.5 rounded-lg text-sm shadow-lg"
-                  sideOffset={5}
-                >
-                  Shuffle
-                </Tooltip.Content>
-              </Tooltip.Portal>
-            </Tooltip.Root>
-
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <button className="p-2 text-gray-400 hover:text-white transition-colors">
-                  <FaStepBackward className="text-xl" />
-                </button>
-              </Tooltip.Trigger>
-              <Tooltip.Portal>
-                <Tooltip.Content 
-                  className="bg-black/90 text-white px-3 py-1.5 rounded-lg text-sm shadow-lg"
-                  sideOffset={5}
-                >
-                  Previous
-                </Tooltip.Content>
-              </Tooltip.Portal>
-            </Tooltip.Root>
-
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <button 
-                  className="bg-white text-black rounded-full p-4 hover:scale-105 transition-transform shadow-lg"
-                  onClick={() => setIsPlaying(!isPlaying)}
-                >
-                  {isPlaying ? <FaPause className="text-xl" /> : <FaPlay className="text-xl" />}
-                </button>
-              </Tooltip.Trigger>
-              <Tooltip.Portal>
-                <Tooltip.Content 
-                  className="bg-black/90 text-white px-3 py-1.5 rounded-lg text-sm shadow-lg"
-                  sideOffset={5}
-                >
-                  {isPlaying ? 'Pause' : 'Play'}
-                </Tooltip.Content>
-              </Tooltip.Portal>
-            </Tooltip.Root>
-
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <button className="p-2 text-gray-400 hover:text-white transition-colors">
-                  <FaStepForward className="text-xl" />
-                </button>
-              </Tooltip.Trigger>
-              <Tooltip.Portal>
-                <Tooltip.Content 
-                  className="bg-black/90 text-white px-3 py-1.5 rounded-lg text-sm shadow-lg"
-                  sideOffset={5}
-                >
-                  Next
-                </Tooltip.Content>
-              </Tooltip.Portal>
-            </Tooltip.Root>
-
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <button 
-                  className={`p-2 rounded-full transition-colors ${isRepeat ? 'text-green-500 hover:text-green-400' : 'text-gray-400 hover:text-white'}`}
-                  onClick={() => setIsRepeat(!isRepeat)}
-                >
-                  <FaRedo className="text-xl" />
-                </button>
-              </Tooltip.Trigger>
-              <Tooltip.Portal>
-                <Tooltip.Content 
-                  className="bg-black/90 text-white px-3 py-1.5 rounded-lg text-sm shadow-lg"
-                  sideOffset={5}
-                >
-                  Repeat
-                </Tooltip.Content>
-              </Tooltip.Portal>
-            </Tooltip.Root>
-          </Tooltip.Provider>
-        </div>
-
-        {/* Progress Bar */}
-        <div className="flex items-center gap-2 w-full max-w-2xl">
-          <span className="text-xs text-gray-400 w-12">1:23</span>
-          <Slider.Root 
-            className="relative flex items-center select-none touch-none w-full h-5 group"
-            value={[progress]}
-            onValueChange={handleProgressChange}
-            max={100}
-            step={1}
-          >
-            <Slider.Track className="bg-gray-600 relative grow rounded-full h-1">
-              <Slider.Range className="absolute bg-white rounded-full h-full" />
-            </Slider.Track>
-            <Slider.Thumb 
-              className="block w-3 h-3 bg-white rounded-full hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-white/50 opacity-0 group-hover:opacity-100 transition-opacity"
-              aria-label="Progress"
+    <div className="fixed bottom-0 left-0 right-0 bg-[#181818] border-t border-gray-800 p-4">
+      <div className="max-w-7xl mx-auto flex items-center justify-between">
+        {/* Track Info */}
+        <div className="flex items-center space-x-4 w-1/4">
+          {currentTrack.cover_path && (
+            <img
+              src={`${process.env.NEXT_PUBLIC_API_URL}${currentTrack.cover_path}`}
+              alt={currentTrack.name}
+              className="w-14 h-14 rounded cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={handleCoverClick}
             />
-          </Slider.Root>
-          <span className="text-xs text-gray-400 w-12">3:45</span>
+          )}
+          <div>
+            <h3 className="text-sm font-medium text-white cursor-pointer hover:underline" onClick={handleCoverClick}>
+              {currentTrack.name}
+            </h3>
+            <p className="text-xs text-gray-400">{currentTrack.owner_username}</p>
+            <p className="text-xs text-gray-400">{plays.toLocaleString()} прослушиваний</p>
+          </div>
         </div>
-      </div>
 
-      {/* Volume Control */}
-      <div className="w-1/4 flex justify-end items-center gap-4">
-        <Tooltip.Provider>
-          <Tooltip.Root>
-            <Tooltip.Trigger asChild>
-              <button 
-                className="p-2 text-gray-400 hover:text-white transition-colors"
-                onClick={() => setIsMuted(!isMuted)}
-              >
-                {isMuted ? <FaVolumeMute className="text-xl" /> : <FaVolumeUp className="text-xl" />}
-              </button>
-            </Tooltip.Trigger>
-            <Tooltip.Portal>
-              <Tooltip.Content 
-                className="bg-black/90 text-white px-3 py-1.5 rounded-lg text-sm shadow-lg"
-                sideOffset={5}
-              >
-                {isMuted ? 'Unmute' : 'Mute'}
-              </Tooltip.Content>
-            </Tooltip.Portal>
-          </Tooltip.Root>
-        </Tooltip.Provider>
+        {/* Player Controls */}
+        <div className="flex flex-col items-center w-2/4">
+          <div className="flex items-center space-x-6 mb-2">
+            <button className="text-gray-400 hover:text-white">
+              <FaStepBackward />
+            </button>
+            <button
+              onClick={togglePlayPause}
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-white text-black hover:scale-105 transition-transform"
+            >
+              {isPlaying ? <FaPause /> : <FaPlay />}
+            </button>
+            <button className="text-gray-400 hover:text-white">
+              <FaStepForward />
+            </button>
+          </div>
+          <div className="w-full flex items-center space-x-2">
+            <span className="text-xs text-gray-400">{formatTime(currentTime)}</span>
+            <input
+              type="range"
+              min="0"
+              max={duration || 100}
+              value={currentTime}
+              onChange={(e) => seekTo(parseFloat(e.target.value))}
+              className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+            />
+            <span className="text-xs text-gray-400">{formatTime(duration)}</span>
+          </div>
+        </div>
 
-        <Slider.Root 
-          className="relative flex items-center select-none touch-none w-24 h-5 group"
-          value={[isMuted ? 0 : volume]}
-          onValueChange={handleVolumeChange}
-          max={100}
-          step={1}
-        >
-          <Slider.Track className="bg-gray-600 relative grow rounded-full h-1">
-            <Slider.Range className="absolute bg-white rounded-full h-full" />
-          </Slider.Track>
-          <Slider.Thumb 
-            className="block w-3 h-3 bg-white rounded-full hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-white/50 opacity-0 group-hover:opacity-100 transition-opacity"
-            aria-label="Volume"
+        {/* Volume Control */}
+        <div className="flex items-center space-x-2 w-1/4 justify-end">
+          <button onClick={toggleMute} className="text-gray-400 hover:text-white">
+            {isMuted ? <FaVolumeMute /> : <FaVolumeUp />}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={volume}
+            onChange={(e) => setVolume(parseFloat(e.target.value))}
+            className="w-24 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
           />
-        </Slider.Root>
+        </div>
       </div>
     </div>
   );

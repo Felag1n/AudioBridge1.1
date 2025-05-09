@@ -1,29 +1,24 @@
 "use client"
-import { FaPlay, FaPause, FaHeart, FaRegHeart, FaShare, FaEllipsisH, FaRandom, FaRedo, FaComment } from 'react-icons/fa';
-import { IoMdMusicalNote } from 'react-icons/io';
-import { BsCollectionPlay } from 'react-icons/bs';
-import { RiPlayListFill } from 'react-icons/ri';
+import { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
+import { FaPlay, FaPause, FaHeart, FaRegHeart, FaShare, FaEllipsisH } from 'react-icons/fa';
 import Sidebar from '@/components/Sidebar';
 import PlayerBar from '@/components/PlayerBar';
 import TrackComments from '@/components/TrackComments';
-import Image from 'next/image';
-import { useState } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { useAudio } from '@/contexts/AudioContext';
 
 interface Track {
-  id: number;
-  title: string;
-  artist: string;
-  album: string;
-  duration: string;
-  coverUrl: string;
-  description: string;
-  genre: string;
-  releaseDate: string;
-  likes: number;
+  id: string;
+  name: string;
+  owner_username: string;
+  file_path: string;
+  cover_path: string | null;
+  created_at: string;
   plays: number;
-  waveform: string;
-  reposts: number;
-  comments: number;
+  duration: string | null;
+  likes_count: number;
+  is_liked: boolean;
 }
 
 interface Comment {
@@ -39,77 +34,97 @@ interface Comment {
   replies?: Comment[];
 }
 
-// This would normally come from an API
-const mockTrack: Track = {
-  id: 1,
-  title: "Пример Трека",
-  artist: "Имя Исполнителя",
-  album: "Название Альбома",
-  duration: "3:45",
-  coverUrl: "/track-cover.jpg",
-  description: "Это описание трека. Оно может быть довольно длинным и содержать информацию о треке, процессе его создания и вдохновении исполнителя.",
-  genre: "Электроника",
-  releaseDate: "2024-05-05",
-  likes: 1234,
-  plays: 45678,
-  waveform: "M0,50 L100,50 L200,30 L300,70 L400,20 L500,80 L600,40 L700,60 L800,50 L900,50 L1000,50",
-  reposts: 234,
-  comments: 56
-};
-
-const mockComments: Comment[] = [
-  {
-    id: 1,
-    user: {
-      name: "User1",
-      avatar: "/avatar1.jpg"
-    },
-    text: "This track is amazing! The production quality is outstanding.",
-    timestamp: "2 hours ago",
-    likes: 45,
-    isLiked: false,
-    replies: [
-      {
-        id: 2,
-        user: {
-          name: "Artist Name",
-          avatar: "/artist.jpg"
-        },
-        text: "Thank you! I'm glad you like it.",
-        timestamp: "1 hour ago",
-        likes: 12,
-        isLiked: false
-      }
-    ]
-  },
-  {
-    id: 3,
-    user: {
-      name: "User2",
-      avatar: "/avatar2.jpg"
-    },
-    text: "The melody is so catchy, I can't stop listening to it!",
-    timestamp: "5 hours ago",
-    likes: 32,
-    isLiked: true
-  }
-];
-
-export default function TrackPage({ params }: { params: { id: string } }) {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [showPlayer, setShowPlayer] = useState(false);
+export default function TrackPage() {
+  const { id } = useParams();
+  const { isAuthenticated } = useAuth();
+  const [track, setTrack] = useState<Track | null>(null);
   const [activeTab, setActiveTab] = useState('comments');
+  const { playTrack, isPlaying, togglePlayPause, currentTrack } = useAudio();
 
-  const handleCoverClick = () => {
-    setIsPlaying(true);
-    setShowPlayer(true);
+  useEffect(() => {
+    const fetchTrack = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks/${id}`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+          }
+        });
+        if (response.ok) {
+          const trackData = await response.json();
+          setTrack(trackData);
+        }
+      } catch (error) {
+        console.error('Error fetching track:', error);
+      }
+    };
+
+    if (id) {
+      fetchTrack();
+    }
+  }, [id]);
+
+  // Обновляем количество прослушиваний при изменении currentTrack
+  useEffect(() => {
+    if (currentTrack?.id === id && typeof currentTrack?.plays === 'number' && track) {
+      const newPlays = currentTrack.plays;
+      setTrack(prev => {
+        if (!prev || prev.plays === newPlays) return prev;
+        return { ...prev, plays: newPlays };
+      });
+    }
+  }, [currentTrack?.plays, id]);
+
+  const handlePlayPause = async () => {
+    if (!track) return;
+    
+    if (isPlaying) {
+      togglePlayPause();
+    } else {
+      playTrack(track);
+    }
   };
 
+  const handleLike = async () => {
+    if (!track) return;
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/tracks/${track.id}/like`,
+        {
+          method: track.is_liked ? 'DELETE' : 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        setTrack({
+          ...track,
+          is_liked: !track.is_liked,
+          likes_count: track.is_liked ? track.likes_count - 1 : track.likes_count + 1
+        });
+      }
+    } catch (error) {
+      console.error('Error toggling like:', error);
+    }
+  };
+
+  if (!track) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#121212] to-black text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500 mx-auto mb-4"></div>
+          <p>Загрузка трека...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#121212] text-white">
-      <Sidebar />
-      
-      <div className="ml-64">
+    <div className="min-h-screen bg-gradient-to-b from-[#121212] to-black text-white">
+      <Sidebar onSearchClick={() => {}} />
+      <div className="ml-64 p-8">
         {/* Hero Section with Cover */}
         <div className="relative h-[60vh] bg-gradient-to-b from-[#1a1a1a] to-[#121212]">
           <div className="absolute inset-0 bg-gradient-to-b from-black/50 to-transparent" />
@@ -118,23 +133,44 @@ export default function TrackPage({ params }: { params: { id: string } }) {
             <div className="flex gap-8 items-end w-full">
               {/* Cover Image */}
               <div 
-                className="w-64 h-64 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg shadow-2xl transform hover:scale-105 transition-transform duration-300 relative overflow-hidden cursor-pointer group"
-                onClick={handleCoverClick}
+                className="relative w-full md:w-96 aspect-square rounded-xl overflow-hidden bg-zinc-800/50 cursor-pointer group"
+                onClick={handlePlayPause}
               >
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <FaPlay className="text-4xl text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                {track.cover_path ? (
+                  <img
+                    src={`${process.env.NEXT_PUBLIC_API_URL}${track.cover_path}`}
+                    alt={track.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <FaPlay className="text-gray-400 text-6xl" />
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  {isPlaying ? (
+                    <FaPause className="text-white text-6xl" />
+                  ) : (
+                    <FaPlay className="text-white text-6xl" />
+                  )}
                 </div>
-                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors duration-300" />
               </div>
               
               {/* Track Info */}
               <div className="flex-1">
                 <div className="mb-6">
-                  <h1 className="text-4xl font-bold mb-2">{mockTrack.title}</h1>
-                  <h2 className="text-xl text-gray-300 mb-4">{mockTrack.artist}</h2>
+                  <h1 className="text-4xl font-bold mb-2">{track.name}</h1>
+                  <h2 className="text-xl text-gray-300 mb-4">by {track.owner_username}</h2>
                   
                   <div className="flex items-center gap-4">
-                    <button className="text-gray-300 hover:text-white transition-colors">
+                    <button
+                      onClick={handleLike}
+                      className={`text-gray-300 hover:text-white transition-colors ${
+                        track.is_liked
+                          ? 'text-red-500 hover:text-red-600'
+                          : 'text-gray-300 hover:text-white'
+                      }`}
+                    >
                       <FaHeart className="text-xl" />
                     </button>
                     <button className="text-gray-300 hover:text-white transition-colors">
@@ -147,25 +183,11 @@ export default function TrackPage({ params }: { params: { id: string } }) {
                 </div>
 
                 <div className="flex items-center gap-6 text-sm text-gray-400">
-                  <span>{mockTrack.plays.toLocaleString()} прослушиваний</span>
-                  <span>{mockTrack.likes.toLocaleString()} лайков</span>
-                  <span>{mockTrack.reposts.toLocaleString()} репостов</span>
-                  <span>{mockTrack.comments.toLocaleString()} комментариев</span>
+                  <span>{track.plays.toLocaleString()} прослушиваний</span>
+                  <span>{track.likes_count.toLocaleString()} лайков</span>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* Waveform */}
-        <div className="px-8 py-4">
-          <div className="relative h-2 bg-gray-800 rounded-full overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-orange-400" style={{ width: '30%' }} />
-            <div className="absolute top-1/2 left-[30%] w-3 h-3 bg-white rounded-full -translate-y-1/2" />
-          </div>
-          <div className="flex justify-between text-sm text-gray-400 mt-2">
-            <span>1:23</span>
-            <span>{mockTrack.duration}</span>
           </div>
         </div>
 
@@ -189,31 +211,23 @@ export default function TrackPage({ params }: { params: { id: string } }) {
 
         {/* Content */}
         <div className="px-8 py-6">
-          {activeTab === 'comments' && <TrackComments comments={mockComments} />}
+          {activeTab === 'comments' && <TrackComments comments={[]} />}
           
           {activeTab === 'details' && (
             <div className="space-y-6">
               <div>
                 <h3 className="text-lg font-semibold mb-4">О треке</h3>
-                <p className="text-gray-400 leading-relaxed">{mockTrack.description}</p>
+                <p className="text-gray-400 leading-relaxed">{track.name}</p>
               </div>
               
               <div className="grid grid-cols-2 gap-6">
                 <div className="bg-[#181818] p-4 rounded-lg">
-                  <h4 className="text-sm text-gray-500 mb-2">Альбом</h4>
-                  <p className="text-gray-300">{mockTrack.album}</p>
-                </div>
-                <div className="bg-[#181818] p-4 rounded-lg">
-                  <h4 className="text-sm text-gray-500 mb-2">Жанр</h4>
-                  <p className="text-gray-300">{mockTrack.genre}</p>
-                </div>
-                <div className="bg-[#181818] p-4 rounded-lg">
                   <h4 className="text-sm text-gray-500 mb-2">Дата выхода</h4>
-                  <p className="text-gray-300">{mockTrack.releaseDate}</p>
+                  <p className="text-gray-300">{new Date(track.created_at).toLocaleDateString()}</p>
                 </div>
                 <div className="bg-[#181818] p-4 rounded-lg">
                   <h4 className="text-sm text-gray-500 mb-2">Длительность</h4>
-                  <p className="text-gray-300">{mockTrack.duration}</p>
+                  <p className="text-gray-300">{track.duration}</p>
                 </div>
               </div>
             </div>
@@ -221,7 +235,7 @@ export default function TrackPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {showPlayer && <PlayerBar currentTrack={mockTrack} />}
+      <PlayerBar />
     </div>
   );
 } 
