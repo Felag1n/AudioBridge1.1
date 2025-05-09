@@ -63,7 +63,7 @@ export default function Header() {
                 <div className="w-8 h-8 rounded-full overflow-hidden">
                   {user?.avatar_path ? (
                     <img 
-                      src={`${process.env.NEXT_PUBLIC_API_URL}${user.avatar_path}`} 
+                      src={user.avatar_path.startsWith('http') ? user.avatar_path : `${process.env.NEXT_PUBLIC_API_URL}${user.avatar_path}`}
                       alt="Avatar" 
                       className="w-full h-full object-cover"
                     />

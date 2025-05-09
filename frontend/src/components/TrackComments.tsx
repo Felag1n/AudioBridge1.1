@@ -1,7 +1,9 @@
-import { FaHeart, FaRegHeart, FaReply, FaEllipsisH, FaTrash } from 'react-icons/fa';
+"use client"
+import { FaHeart, FaRegHeart, FaReply, FaEllipsisH, FaTrash, FaUser } from 'react-icons/fa';
 import Image from 'next/image';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
 
 interface User {
   username: string;
@@ -25,12 +27,13 @@ interface TrackCommentsProps {
 }
 
 export default function TrackComments({ trackId }: TrackCommentsProps) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
-  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     fetchComments();
@@ -54,7 +57,7 @@ export default function TrackComments({ trackId }: TrackCommentsProps) {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmitComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim()) return;
 
@@ -65,48 +68,24 @@ export default function TrackComments({ trackId }: TrackCommentsProps) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         },
-        body: JSON.stringify({ text: newComment })
+        body: JSON.stringify({
+          text: newComment,
+          parent_id: replyTo
+        })
       });
 
       if (response.ok) {
-        const newCommentData = await response.json();
-        setComments(prev => [newCommentData, ...prev]);
         setNewComment('');
+        setReplyTo(null);
+        setReplyText('');
+        fetchComments();
       }
     } catch (error) {
       console.error('Error posting comment:', error);
     }
   };
 
-  const handleReply = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!replyText.trim() || !replyingTo) return;
-
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks/${trackId}/comments`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-        },
-        body: JSON.stringify({ 
-          text: replyText,
-          parent_id: replyingTo
-        })
-      });
-
-      if (response.ok) {
-        const newReplyData = await response.json();
-        setComments(prev => [newReplyData, ...prev]);
-        setReplyText('');
-        setReplyingTo(null);
-      }
-    } catch (error) {
-      console.error('Error posting reply:', error);
-    }
-  };
-
-  const handleDelete = async (commentId: string) => {
+  const handleDeleteComment = async (commentId: string) => {
     try {
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/tracks/${trackId}/comments/${commentId}`,
@@ -119,11 +98,15 @@ export default function TrackComments({ trackId }: TrackCommentsProps) {
       );
 
       if (response.ok) {
-        setComments(prev => prev.filter(comment => comment.id !== commentId));
+        fetchComments();
       }
     } catch (error) {
       console.error('Error deleting comment:', error);
     }
+  };
+
+  const handleUserClick = (username: string) => {
+    router.push(`/profile/${username}`);
   };
 
   const formatDate = (dateString: string) => {
@@ -145,28 +128,114 @@ export default function TrackComments({ trackId }: TrackCommentsProps) {
     );
   }
 
+  const renderComment = (comment: Comment) => {
+    const isReply = comment.parent_id !== null;
+    const isOwner = user?.username === comment.username;
+
+    return (
+      <div key={comment.id} className={`${isReply ? 'ml-8 mt-2' : 'mb-6'}`}>
+        <div className="flex items-start gap-3">
+          <div 
+            className="w-10 h-10 rounded-full overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => handleUserClick(comment.username)}
+          >
+            {comment.user.avatar_path ? (
+              <img
+                src={`${process.env.NEXT_PUBLIC_API_URL}${comment.user.avatar_path}`}
+                alt={comment.username}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center">
+                <FaUser className="text-white text-sm" />
+              </div>
+            )}
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <span 
+                className="font-medium text-white cursor-pointer hover:underline"
+                onClick={() => handleUserClick(comment.username)}
+              >
+                {comment.username}
+              </span>
+              <span className="text-sm text-gray-400">{formatDate(comment.created_at)}</span>
+            </div>
+            <p className="text-gray-300 mb-2">{comment.text}</p>
+            <div className="flex items-center gap-4">
+              {!isReply && (
+                <button
+                  onClick={() => {
+                    setReplyTo(comment.id);
+                    setReplyText('');
+                  }}
+                  className="text-sm text-gray-400 hover:text-white flex items-center gap-1"
+                >
+                  <FaReply />
+                  Ответить
+                </button>
+              )}
+              {isOwner && (
+                <button
+                  onClick={() => handleDeleteComment(comment.id)}
+                  className="text-sm text-red-400 hover:text-red-300 flex items-center gap-1"
+                >
+                  <FaTrash />
+                  Удалить
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Comment Form */}
       {isAuthenticated && (
-        <form onSubmit={handleSubmit} className="bg-[#181818] p-4 rounded-lg">
-          <div className="flex gap-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-400 rounded-full flex-shrink-0" />
+        <form onSubmit={handleSubmitComment} className="space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full overflow-hidden">
+              {user?.avatar_path ? (
+                <img
+                  src={`${process.env.NEXT_PUBLIC_API_URL}${user.avatar_path}`}
+                  alt={user.username}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center">
+                  <FaUser className="text-white text-sm" />
+                </div>
+              )}
+            </div>
             <div className="flex-1">
               <textarea
-                className="w-full bg-[#282828] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                placeholder="Write a comment..."
+                value={replyTo ? replyText : newComment}
+                onChange={(e) => replyTo ? setReplyText(e.target.value) : setNewComment(e.target.value)}
+                placeholder={replyTo ? "Написать ответ..." : "Написать комментарий..."}
+                className="w-full bg-[#181818] text-white rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500"
                 rows={3}
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
               />
-              <div className="flex justify-end mt-2">
-                <button 
+              <div className="flex justify-end gap-2 mt-2">
+                {replyTo && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReplyTo(null);
+                      setReplyText('');
+                    }}
+                    className="px-4 py-2 text-sm text-gray-400 hover:text-white"
+                  >
+                    Отмена
+                  </button>
+                )}
+                <button
                   type="submit"
-                  className="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!newComment.trim()}
+                  className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
                 >
-                  Post
+                  {replyTo ? 'Ответить' : 'Отправить'}
                 </button>
               </div>
             </div>
@@ -176,96 +245,16 @@ export default function TrackComments({ trackId }: TrackCommentsProps) {
 
       {/* Comments List */}
       <div className="space-y-6">
-        {comments.map((comment) => (
-          <div key={comment.id} className="bg-[#181818] p-4 rounded-lg">
-            <div className="flex gap-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-400 rounded-full flex-shrink-0" />
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{comment.user.nickname || comment.user.username}</span>
-                    <span className="text-sm text-gray-400">{formatDate(comment.created_at)}</span>
-                  </div>
-                  {isAuthenticated && comment.username === localStorage.getItem('username') && (
-                    <button 
-                      className="text-gray-400 hover:text-red-500 transition-colors"
-                      onClick={() => handleDelete(comment.id)}
-                    >
-                      <FaTrash />
-                    </button>
-                  )}
-                </div>
-                <p className="text-gray-300 mb-3">{comment.text}</p>
-                {isAuthenticated && (
-                  <div className="flex items-center gap-4 text-sm text-gray-400">
-                    <button 
-                      className="flex items-center gap-1 hover:text-white transition-colors"
-                      onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
-                    >
-                      <FaReply />
-                      <span>Reply</span>
-                    </button>
-                  </div>
-                )}
-
-                {/* Reply Form */}
-                {replyingTo === comment.id && (
-                  <form onSubmit={handleReply} className="mt-4 pl-4 border-l-2 border-gray-700">
-                    <div className="flex gap-4">
-                      <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-orange-400 rounded-full flex-shrink-0" />
-                      <div className="flex-1">
-                        <textarea
-                          className="w-full bg-[#282828] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                          placeholder="Write a reply..."
-                          rows={2}
-                          value={replyText}
-                          onChange={(e) => setReplyText(e.target.value)}
-                        />
-                        <div className="flex justify-end mt-2">
-                          <button 
-                            type="submit"
-                            className="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={!replyText.trim()}
-                          >
-                            Reply
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </form>
-                )}
-
-                {/* Replies */}
-                {comments
-                  .filter(reply => reply.parent_id === comment.id)
-                  .map((reply) => (
-                    <div key={reply.id} className="mt-4 pl-4 border-l-2 border-gray-700">
-                      <div className="flex gap-4">
-                        <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-orange-400 rounded-full flex-shrink-0" />
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{reply.user.nickname || reply.user.username}</span>
-                              <span className="text-sm text-gray-400">{formatDate(reply.created_at)}</span>
-                            </div>
-                            {isAuthenticated && reply.username === localStorage.getItem('username') && (
-                              <button 
-                                className="text-gray-400 hover:text-red-500 transition-colors"
-                                onClick={() => handleDelete(reply.id)}
-                              >
-                                <FaTrash />
-                              </button>
-                            )}
-                          </div>
-                          <p className="text-gray-300 mb-2">{reply.text}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-              </div>
+        {comments
+          .filter(comment => !comment.parent_id)
+          .map(comment => (
+            <div key={comment.id}>
+              {renderComment(comment)}
+              {comments
+                .filter(reply => reply.parent_id === comment.id)
+                .map(reply => renderComment(reply))}
             </div>
-          </div>
-        ))}
+          ))}
       </div>
     </div>
   );

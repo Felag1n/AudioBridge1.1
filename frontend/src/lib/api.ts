@@ -156,7 +156,11 @@ export const apiClient = {
     const response = await fetch(api.tracks.list, {
       headers: getAuthHeaders(),
     });
-    return response.json();
+    if (!response.ok) {
+      throw new Error('Failed to fetch tracks');
+    }
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
   },
 
   deleteTrack: async (id: string) => {

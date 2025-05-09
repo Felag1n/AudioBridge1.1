@@ -1,10 +1,11 @@
 "use client"
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
-import { FaPlay, FaPause, FaHeart, FaRegHeart, FaShare, FaEllipsisH } from 'react-icons/fa';
+import { useParams, useRouter } from 'next/navigation';
+import { FaPlay, FaPause, FaHeart, FaRegHeart, FaShare, FaEllipsisH, FaUser } from 'react-icons/fa';
 import Sidebar from '@/components/Sidebar';
 import PlayerBar from '@/components/PlayerBar';
 import TrackComments from '@/components/TrackComments';
+import Header from '@/components/Header';
 import { useAuth } from '@/hooks/useAuth';
 import { useAudio } from '@/contexts/AudioContext';
 
@@ -12,6 +13,7 @@ interface Track {
   id: string;
   name: string;
   owner_username: string;
+  owner_avatar: string | null;
   file_path: string;
   cover_path: string | null;
   created_at: string;
@@ -36,6 +38,7 @@ interface Comment {
 
 export default function TrackPage() {
   const { id } = useParams();
+  const router = useRouter();
   const { isAuthenticated } = useAuth();
   const [track, setTrack] = useState<Track | null>(null);
   const [activeTab, setActiveTab] = useState('comments');
@@ -110,6 +113,12 @@ export default function TrackPage() {
     }
   };
 
+  const handleUserClick = () => {
+    if (track) {
+      router.push(`/profile/${track.owner_username}`);
+    }
+  };
+
   if (!track) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#121212] to-black text-white flex items-center justify-center">
@@ -123,8 +132,9 @@ export default function TrackPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#121212] to-black text-white">
+      <Header />
       <Sidebar onSearchClick={() => {}} />
-      <div className="ml-64 p-8">
+      <div className="ml-64 p-8 pt-24 pb-32">
         {/* Hero Section with Cover */}
         <div className="relative h-[60vh] bg-gradient-to-b from-[#1a1a1a] to-[#121212]">
           <div className="absolute inset-0 bg-gradient-to-b from-black/50 to-transparent" />
@@ -160,7 +170,30 @@ export default function TrackPage() {
               <div className="flex-1">
                 <div className="mb-6">
                   <h1 className="text-4xl font-bold mb-2">{track.name}</h1>
-                  <h2 className="text-xl text-gray-300 mb-4">by {track.owner_username}</h2>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div 
+                      className="w-10 h-10 rounded-full overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={handleUserClick}
+                    >
+                      {track.owner_avatar ? (
+                        <img
+                          src={`${process.env.NEXT_PUBLIC_API_URL}${track.owner_avatar}`}
+                          alt={track.owner_username}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center">
+                          <FaUser className="text-white text-sm" />
+                        </div>
+                      )}
+                    </div>
+                    <h2 
+                      className="text-xl text-gray-300 cursor-pointer hover:text-white transition-colors"
+                      onClick={handleUserClick}
+                    >
+                      by {track.owner_username}
+                    </h2>
+                  </div>
                   
                   <div className="flex items-center gap-4">
                     <button
@@ -172,12 +205,6 @@ export default function TrackPage() {
                       }`}
                     >
                       <FaHeart className="text-xl" />
-                    </button>
-                    <button className="text-gray-300 hover:text-white transition-colors">
-                      <FaShare className="text-xl" />
-                    </button>
-                    <button className="text-gray-300 hover:text-white transition-colors">
-                      <FaEllipsisH className="text-xl" />
                     </button>
                   </div>
                 </div>
@@ -220,15 +247,9 @@ export default function TrackPage() {
                 <p className="text-gray-400 leading-relaxed">{track.name}</p>
               </div>
               
-              <div className="grid grid-cols-2 gap-6">
-                <div className="bg-[#181818] p-4 rounded-lg">
-                  <h4 className="text-sm text-gray-500 mb-2">Дата выхода</h4>
-                  <p className="text-gray-300">{new Date(track.created_at).toLocaleDateString()}</p>
-                </div>
-                <div className="bg-[#181818] p-4 rounded-lg">
-                  <h4 className="text-sm text-gray-500 mb-2">Длительность</h4>
-                  <p className="text-gray-300">{track.duration}</p>
-                </div>
+              <div className="bg-[#181818] p-4 rounded-lg">
+                <h4 className="text-sm text-gray-500 mb-2">Дата выхода</h4>
+                <p className="text-gray-300">{new Date(track.created_at).toLocaleDateString()}</p>
               </div>
             </div>
           )}

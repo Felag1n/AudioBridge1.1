@@ -30,8 +30,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
   const menuItems = [
     { id: 'home', icon: FaHome, label: 'Главная', href: '/' },
     { id: 'search', icon: FaSearch, label: 'Поиск', onClick: onSearchClick },
-    { id: 'library', icon: FaMusic, label: 'Моя медиатека', href: '/library' },
-    { id: 'favorites', icon: FaHeart, label: 'Избранное', href: '/favorites' },
+
   ];
 
   return (

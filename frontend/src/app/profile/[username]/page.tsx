@@ -1,12 +1,13 @@
 "use client"
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
-import { FaPlay, FaPause, FaHeart, FaRegHeart } from 'react-icons/fa';
+import { useParams, useRouter } from 'next/navigation';
+import { FaPlay, FaPause, FaHeart, FaRegHeart, FaEdit } from 'react-icons/fa';
 import Sidebar from '@/components/Sidebar';
 import PlayerBar from '@/components/PlayerBar';
 import { useAuth } from '@/hooks/useAuth';
 import { useAudio } from '@/contexts/AudioContext';
 import Image from 'next/image';
+import Link from 'next/link';
 
 interface User {
   username: string;
@@ -37,12 +38,17 @@ interface UserStats {
 
 export default function ProfilePage() {
   const { username } = useParams();
-  const { isAuthenticated } = useAuth();
+  const router = useRouter();
+  const { isAuthenticated, user: currentUser } = useAuth();
   const { playTrack, isPlaying, togglePlayPause, currentTrack } = useAudio();
   const [user, setUser] = useState<User | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
+  const [likedTracks, setLikedTracks] = useState<Track[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('tracks');
+  const isOwnProfile = currentUser?.username === username;
 
   useEffect(() => {
     fetchUserData();
@@ -50,6 +56,9 @@ export default function ProfilePage() {
 
   const fetchUserData = async () => {
     try {
+      setIsLoading(true);
+      setError(null);
+
       // Fetch user profile
       const userResponse = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/users/${username}`,
@@ -59,14 +68,22 @@ export default function ProfilePage() {
           }
         }
       );
-      if (userResponse.ok) {
-        const userData = await userResponse.json();
-        setUser(userData);
+
+      if (!userResponse.ok) {
+        if (userResponse.status === 404) {
+          setError('Пользователь не найден');
+        } else {
+          setError('Ошибка при загрузке профиля');
+        }
+        return;
       }
+
+      const userData = await userResponse.json();
+      setUser(userData);
 
       // Fetch user tracks
       const tracksResponse = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/users/${username}/tracks`,
+        `${process.env.NEXT_PUBLIC_API_URL}/tracks?owner_username=${username}`,
         {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('access_token')}`
@@ -76,6 +93,22 @@ export default function ProfilePage() {
       if (tracksResponse.ok) {
         const tracksData = await tracksResponse.json();
         setTracks(tracksData);
+      }
+
+      // Fetch liked tracks only for own profile
+      if (isOwnProfile) {
+        const likedTracksResponse = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/tracks/liked`,
+          {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+            }
+          }
+        );
+        if (likedTracksResponse.ok) {
+          const likedTracksData = await likedTracksResponse.json();
+          setLikedTracks(likedTracksData);
+        }
       }
 
       // Fetch user stats
@@ -93,6 +126,7 @@ export default function ProfilePage() {
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
+      setError('Ошибка при загрузке данных');
     } finally {
       setIsLoading(false);
     }
@@ -119,6 +153,7 @@ export default function ProfilePage() {
       );
 
       if (response.ok) {
+        // Update tracks list
         setTracks(prev => prev.map(track => 
           track.id === trackId 
             ? { 
@@ -128,6 +163,16 @@ export default function ProfilePage() {
               }
             : track
         ));
+
+        // Update liked tracks list
+        if (isLiked) {
+          setLikedTracks(prev => prev.filter(track => track.id !== trackId));
+        } else {
+          const trackToAdd = tracks.find(track => track.id === trackId);
+          if (trackToAdd) {
+            setLikedTracks(prev => [...prev, { ...trackToAdd, is_liked: true }]);
+          }
+        }
       }
     } catch (error) {
       console.error('Error toggling like:', error);
@@ -145,6 +190,17 @@ export default function ProfilePage() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#121212] to-black text-white flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-2">{error}</h1>
+          <p className="text-gray-400">Попробуйте обновить страницу или вернуться на главную</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#121212] to-black text-white flex items-center justify-center">
@@ -155,6 +211,65 @@ export default function ProfilePage() {
       </div>
     );
   }
+
+  const renderTracks = (tracksList: Track[]) => (
+    <div className="space-y-4">
+      {tracksList.map((track) => (
+        <div 
+          key={track.id}
+          className="bg-[#181818] p-4 rounded-lg hover:bg-[#282828] transition-colors"
+        >
+          <div className="flex items-center gap-4">
+            <div 
+              className="w-16 h-16 bg-zinc-800 rounded-md overflow-hidden cursor-pointer"
+              onClick={() => handlePlayPause(track)}
+            >
+              {track.cover_path ? (
+                <Image
+                  src={`${process.env.NEXT_PUBLIC_API_URL}${track.cover_path}`}
+                  alt={track.name}
+                  width={64}
+                  height={64}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <FaPlay className="text-gray-400 text-2xl" />
+                </div>
+              )}
+            </div>
+            
+            <div className="flex-1">
+              <h3 className="font-medium">{track.name}</h3>
+              <p className="text-sm text-gray-400">{track.plays.toLocaleString()} прослушиваний</p>
+            </div>
+
+            <div className="flex items-center gap-4">
+              {isAuthenticated && (
+                <button
+                  onClick={() => handleLike(track.id, track.is_liked)}
+                  className={`text-gray-300 hover:text-white transition-colors ${
+                    track.is_liked
+                      ? 'text-orange-500 hover:text-orange-600'
+                      : 'text-gray-300 hover:text-white'
+                  }`}
+                >
+                  {track.is_liked ? <FaHeart /> : <FaRegHeart />}
+                </button>
+              )}
+              <span className="text-sm text-gray-400">{track.likes_count}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {tracksList.length === 0 && (
+        <div className="text-center py-8 text-gray-400">
+          {activeTab === 'tracks' ? 'У пользователя пока нет треков' : 'Нет лайкнутых треков'}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#121212] to-black text-white">
@@ -187,7 +302,17 @@ export default function ProfilePage() {
               {/* User Info */}
               <div className="flex-1">
                 <div className="mb-6">
-                  <h1 className="text-4xl font-bold mb-2">{user.nickname || user.username}</h1>
+                  <div className="flex items-center gap-4">
+                    <h1 className="text-4xl font-bold">{user.nickname || user.username}</h1>
+                    {isOwnProfile && (
+                      <Link 
+                        href="/profile/edit"
+                        className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                      >
+                        <FaEdit className="text-xl" />
+                      </Link>
+                    )}
+                  </div>
                   <h2 className="text-xl text-gray-300">@{user.username}</h2>
                 </div>
 
@@ -203,65 +328,40 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Tracks List */}
-        <div className="mt-8">
-          <h2 className="text-2xl font-bold mb-6">Треки</h2>
-          <div className="space-y-4">
-            {tracks.map((track) => (
-              <div 
-                key={track.id}
-                className="bg-[#181818] p-4 rounded-lg hover:bg-[#282828] transition-colors"
+        {/* Tabs */}
+        <div className="mt-8 border-b border-gray-800">
+          <div className="flex gap-8">
+            <button 
+              className={`py-4 text-sm font-medium ${activeTab === 'tracks' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-gray-400 hover:text-white'}`}
+              onClick={() => setActiveTab('tracks')}
+            >
+              Треки
+            </button>
+            {isOwnProfile && (
+              <button 
+                className={`py-4 text-sm font-medium ${activeTab === 'likes' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-gray-400 hover:text-white'}`}
+                onClick={() => setActiveTab('likes')}
               >
-                <div className="flex items-center gap-4">
-                  <div 
-                    className="w-16 h-16 bg-zinc-800 rounded-md overflow-hidden cursor-pointer"
-                    onClick={() => handlePlayPause(track)}
-                  >
-                    {track.cover_path ? (
-                      <Image
-                        src={`${process.env.NEXT_PUBLIC_API_URL}${track.cover_path}`}
-                        alt={track.name}
-                        width={64}
-                        height={64}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <FaPlay className="text-gray-400 text-2xl" />
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="flex-1">
-                    <h3 className="font-medium">{track.name}</h3>
-                    <p className="text-sm text-gray-400">{track.plays.toLocaleString()} прослушиваний</p>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    {isAuthenticated && (
-                      <button
-                        onClick={() => handleLike(track.id, track.is_liked)}
-                        className={`text-gray-300 hover:text-white transition-colors ${
-                          track.is_liked
-                            ? 'text-orange-500 hover:text-orange-600'
-                            : 'text-gray-300 hover:text-white'
-                        }`}
-                      >
-                        {track.is_liked ? <FaHeart /> : <FaRegHeart />}
-                      </button>
-                    )}
-                    <span className="text-sm text-gray-400">{track.likes_count}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {tracks.length === 0 && (
-              <div className="text-center py-8 text-gray-400">
-                У пользователя пока нет треков
-              </div>
+                Лайки
+              </button>
             )}
           </div>
+        </div>
+
+        {/* Content */}
+        <div className="mt-8">
+          {activeTab === 'tracks' && (
+            <div>
+              <h2 className="text-2xl font-bold mb-6">Треки пользователя</h2>
+              {renderTracks(tracks)}
+            </div>
+          )}
+          {activeTab === 'likes' && (
+            <div>
+              <h2 className="text-2xl font-bold mb-6">Лайкнутые треки</h2>
+              {renderTracks(likedTracks)}
+            </div>
+          )}
         </div>
       </div>
 

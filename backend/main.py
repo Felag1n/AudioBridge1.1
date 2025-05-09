@@ -15,6 +15,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from fastapi.middleware.cors import CORSMiddleware
 import time
 from fastapi.staticfiles import StaticFiles
+import random
 
 # Load environment variables
 load_dotenv()
@@ -144,6 +145,7 @@ class TrackCreate(TrackBase):
 class TrackResponse(TrackBase):
     id: str
     owner_username: str
+    owner_avatar: Optional[str] = None
     created_at: datetime
     cover_path: Optional[str] = None
     file_path: str
@@ -322,6 +324,16 @@ async def refresh_access_token(refresh_token: str, db: Session = Depends(get_db)
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
+@app.get("/users/{username}", response_model=UserBase)
+async def get_user_profile(username: str, db: Session = Depends(get_db)):
+    user = get_user(db, username=username)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    return user
+
 @app.put("/users/me", response_model=UserBase)
 async def update_user(
     user_update: UserUpdate,
@@ -449,10 +461,14 @@ async def enrich_track_response(track: Track, current_user: User, db: Session) -
         Like.username == current_user.username
     ).first() is not None
     
+    # Получаем информацию о владельце трека
+    owner = db.query(User).filter(User.username == track.owner_username).first()
+    
     return TrackResponse(
         id=track.id,
         name=track.name,
         owner_username=track.owner_username,
+        owner_avatar=owner.avatar_path if owner else None,
         file_path=track.file_path,
         cover_path=track.cover_path,
         created_at=track.created_at,
@@ -741,4 +757,20 @@ async def search_all(
     return {
         "users": users,
         "tracks": enriched_tracks
-    } 
+    }
+
+@app.get("/tracks/random", response_model=TrackResponse)
+async def get_random_track(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Получаем все треки
+    tracks = db.query(Track).all()
+    if not tracks:
+        raise HTTPException(status_code=404, detail="No tracks found")
+    
+    # Выбираем случайный трек
+    random_track = random.choice(tracks)
+    
+    # Обогащаем ответ информацией о лайках
+    return await enrich_track_response(random_track, current_user, db) 

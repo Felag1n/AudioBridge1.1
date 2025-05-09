@@ -539,7 +539,6 @@ export default function ProfilePage() {
                   <p className="text-sm text-gray-400 truncate">{track.owner_username}</p>
                 </div>
                 <div className="flex items-center gap-6">
-                  <div className="text-sm text-gray-400">{track.duration}</div>
                   <div className="text-sm text-gray-400">
                     {new Date(track.created_at).toLocaleDateString()}
                   </div>
@@ -555,21 +554,6 @@ export default function ProfilePage() {
                       }`}
                     >
                       {track.is_liked ? <FaHeart /> : <FaRegHeart />}
-                    </button>
-                    <button className="p-2 text-gray-400 hover:text-white transition-colors">
-                      <FaShare />
-                    </button>
-                    <button className="p-2 text-gray-400 hover:text-white transition-colors">
-                      <FaEdit />
-                    </button>
-                    <button 
-                      className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteTrack(track.id);
-                      }}
-                    >
-                      <FaTrash />
                     </button>
                   </div>
                 </div>

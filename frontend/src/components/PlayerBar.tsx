@@ -17,6 +17,8 @@ export default function PlayerBar() {
     setVolume,
     toggleMute,
     seekTo,
+    playNextTrack,
+    playPreviousTrack,
     audioRef
   } = useAudio();
 
@@ -96,7 +98,10 @@ export default function PlayerBar() {
         {/* Player Controls */}
         <div className="flex flex-col items-center w-2/4">
           <div className="flex items-center space-x-6 mb-2">
-            <button className="text-gray-400 hover:text-white">
+            <button 
+              onClick={playPreviousTrack}
+              className="text-gray-400 hover:text-white transition-colors"
+            >
               <FaStepBackward />
             </button>
             <button
@@ -105,7 +110,10 @@ export default function PlayerBar() {
             >
               {isPlaying ? <FaPause /> : <FaPlay />}
             </button>
-            <button className="text-gray-400 hover:text-white">
+            <button 
+              onClick={playNextTrack}
+              className="text-gray-400 hover:text-white transition-colors"
+            >
               <FaStepForward />
             </button>
           </div>

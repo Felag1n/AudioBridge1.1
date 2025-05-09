@@ -22,6 +22,8 @@ interface AudioContextType {
   setVolume: (volume: number) => void;
   toggleMute: () => void;
   seekTo: (time: number) => void;
+  playNextTrack: () => Promise<void>;
+  playPreviousTrack: () => Promise<void>;
   audioRef: React.RefObject<HTMLAudioElement | null>;
 }
 
@@ -32,11 +34,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
+  const [volume, setVolume] = useState(0.3);
   const [isMuted, setIsMuted] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const playStartTime = useRef<number | null>(null);
   const hasPlayedEnough = useRef<boolean>(false);
+  const [allTracks, setAllTracks] = useState<Track[]>([]);
 
   useEffect(() => {
     // Создаем аудио элемент при монтировании
@@ -47,6 +50,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       audioRef.current.volume = volume;
     }
 
+    // Загружаем все треки при инициализации
+    fetchAllTracks();
+
     return () => {
       // Очищаем при размонтировании
       if (audioRef.current) {
@@ -55,6 +61,37 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       }
     };
   }, []);
+
+  const fetchAllTracks = async () => {
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        }
+      });
+      if (response.ok) {
+        const tracks = await response.json();
+        setAllTracks(tracks);
+      }
+    } catch (error) {
+      console.error('Error fetching tracks:', error);
+    }
+  };
+
+  const getRandomTrack = (): Track | null => {
+    if (allTracks.length === 0) return null;
+    
+    // Исключаем текущий трек из выбора
+    const availableTracks = allTracks.filter(track => 
+      !currentTrack || track.id !== currentTrack.id
+    );
+    
+    if (availableTracks.length === 0) return null;
+    
+    // Выбираем случайный трек из доступных
+    const randomIndex = Math.floor(Math.random() * availableTracks.length);
+    return availableTracks[randomIndex];
+  };
 
   const sendPlayComplete = async () => {
     if (currentTrack && playStartTime.current && hasPlayedEnough.current) {
@@ -88,7 +125,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const handleTimeUpdate = () => {
       setCurrentTime(audio.currentTime);
       
-      // Проверяем, проиграл ли трек достаточно времени
       if (playStartTime.current && !hasPlayedEnough.current) {
         const playDuration = (Date.now() - playStartTime.current) / 1000;
         if (playDuration >= 25) {
@@ -106,6 +142,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setIsPlaying(false);
       setCurrentTime(0);
       await sendPlayComplete();
+      
+      // Воспроизводим случайный трек после окончания текущего
+      const nextTrack = getRandomTrack();
+      if (nextTrack) {
+        playTrack(nextTrack);
+      }
     };
 
     const handlePause = async () => {
@@ -130,14 +172,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
     try {
       if (currentTrack?.id !== track.id) {
-        // Если переключаемся на новый трек, отправляем запрос о завершении предыдущего
         await sendPlayComplete();
         audioRef.current.src = `${process.env.NEXT_PUBLIC_API_URL}${track.file_path}`;
         setCurrentTrack(track);
       }
       await audioRef.current.play();
       setIsPlaying(true);
-      // Записываем время начала воспроизведения
       playStartTime.current = Date.now();
       hasPlayedEnough.current = false;
     } catch (error) {
@@ -153,7 +193,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         await audioRef.current.pause();
       } else {
         await audioRef.current.play();
-        // Записываем время начала воспроизведения
         playStartTime.current = Date.now();
       }
       setIsPlaying(!isPlaying);
@@ -188,6 +227,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const playNextTrack = async () => {
+    const nextTrack = getRandomTrack();
+    if (nextTrack) {
+      await playTrack(nextTrack);
+    }
+  };
+
+  const playPreviousTrack = async () => {
+    const prevTrack = getRandomTrack();
+    if (prevTrack) {
+      await playTrack(prevTrack);
+    }
+  };
+
   return (
     <AudioContext.Provider
       value={{
@@ -202,6 +255,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         setVolume: handleVolumeChange,
         toggleMute: handleToggleMute,
         seekTo,
+        playNextTrack,
+        playPreviousTrack,
         audioRef,
       }}
     >
