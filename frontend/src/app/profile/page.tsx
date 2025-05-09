@@ -8,6 +8,19 @@ import { apiClient } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
 import { SearchModal } from '@/components/SearchModal';
 
+interface Track {
+  id: string;
+  name: string;
+  owner_username: string;
+  file_path: string;
+  cover_path: string | null;
+  created_at: string;
+  plays: number;
+  duration: string | null;
+  likes_count: number;
+  is_liked: boolean;
+}
+
 export default function ProfilePage() {
   const { isAuthenticated, user } = useAuth();
   const router = useRouter();
@@ -17,36 +30,21 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [username, setUsername] = useState('');
   const [nickname, setNickname] = useState('');
-  const [avatar, setAvatar] = useState('/images/default-avatar.jpg');
+  const [avatar, setAvatar] = useState('/default-avatar.png');
   const [trackCover, setTrackCover] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [tracks, setTracks] = useState([
-    {
-      id: 1,
-      title: 'Мой первый трек',
-      artist: 'Я',
-      duration: '3:45',
-      uploadDate: '2024-05-06',
-      plays: 120,
-      likes: 45,
-      coverUrl: '/track-cover.jpg'
-    },
-    {
-      id: 2,
-      title: 'Второй трек',
-      artist: 'Я',
-      duration: '4:20',
-      uploadDate: '2024-05-05',
-      plays: 85,
-      likes: 32,
-      coverUrl: '/track-cover2.jpg'
-    }
-  ]);
+  const [tracks, setTracks] = useState<Track[]>([]);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+
+  const [uploadingTrack, setUploadingTrack] = useState(false);
+  const [trackName, setTrackName] = useState('');
+  const [trackFile, setTrackFile] = useState<File | null>(null);
+  const [trackCoverFile, setTrackCoverFile] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -64,6 +62,19 @@ export default function ProfilePage() {
         setUsername(userData.username || 'Мой профиль');
         setNickname(userData.nickname || `@${userData.username}`);
         setAvatar(userData.avatar_path ? `${process.env.NEXT_PUBLIC_API_URL}${userData.avatar_path}` : '/images/default-avatar.jpg');
+
+        // Загружаем треки пользователя
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (response.ok) {
+          const allTracks = await response.json();
+          // Фильтруем треки, оставляя только те, которые принадлежат текущему пользователю
+          const userTracks = allTracks.filter((track: Track) => track.owner_username === userData.username);
+          setTracks(userTracks);
+        }
       } catch (error) {
         console.error('Error fetching user data:', error);
         localStorage.removeItem('access_token');
@@ -132,8 +143,20 @@ export default function ProfilePage() {
     setShowUploadModal(true);
   };
 
-  const handleDeleteTrack = (id: number) => {
-    setTracks(tracks.filter(track => track.id !== id));
+  const handleDeleteTrack = async (id: string) => {
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        }
+      });
+      if (response.ok) {
+        setTracks(tracks.filter(track => track.id !== id));
+      }
+    } catch (error) {
+      console.error('Error deleting track:', error);
+    }
   };
 
   const handleAvatarClick = () => {
@@ -144,14 +167,76 @@ export default function ProfilePage() {
     coverInputRef.current?.click();
   };
 
-  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTrackFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (!file.type.includes('audio/')) {
+        setUploadError('Пожалуйста, выберите аудио файл');
+        return;
+      }
+      setTrackFile(file);
+      setUploadError(null);
+    }
+  };
+
+  const handleTrackCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.includes('image/')) {
+        setUploadError('Пожалуйста, выберите изображение');
+        return;
+      }
+      setTrackCoverFile(file);
+      // Создаем превью обложки
       const reader = new FileReader();
       reader.onloadend = () => {
         setTrackCover(reader.result as string);
       };
       reader.readAsDataURL(file);
+      setUploadError(null);
+    }
+  };
+
+  const handleTrackUpload = async () => {
+    if (!trackFile || !trackName) {
+      setUploadError('Пожалуйста, укажите название и выберите файл');
+      return;
+    }
+
+    try {
+      setUploadingTrack(true);
+      setUploadError(null);
+
+      const formData = new FormData();
+      formData.append('file', trackFile);
+      formData.append('name', trackName);
+      if (trackCoverFile) {
+        formData.append('cover', trackCoverFile);
+      }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks/upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Ошибка при загрузке трека');
+      }
+
+      const newTrack = await response.json();
+      setTracks([newTrack, ...tracks]);
+      setShowUploadModal(false);
+      setTrackName('');
+      setTrackFile(null);
+      setTrackCoverFile(null);
+    } catch (error) {
+      console.error('Error uploading track:', error);
+      setUploadError('Произошла ошибка при загрузке трека');
+    } finally {
+      setUploadingTrack(false);
     }
   };
 
@@ -266,7 +351,7 @@ export default function ProfilePage() {
           </div>
           <div className="bg-zinc-800/50 backdrop-blur-sm rounded-xl p-6 shadow-lg hover:bg-zinc-800/70 transition-colors">
             <h3 className="text-3xl font-bold mb-2">
-              {tracks.reduce((sum, track) => sum + track.likes, 0)}
+              {tracks.reduce((sum, track) => sum + track.likes_count, 0)}
             </h3>
             <p className="text-gray-400">Всего лайков</p>
           </div>
@@ -293,18 +378,28 @@ export default function ProfilePage() {
                 className="group flex items-center gap-4 p-4 rounded-xl bg-zinc-800/50 hover:bg-zinc-800/70 transition-all transform hover:scale-[1.02] shadow-lg"
               >
                 <div className="relative w-16 h-16 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg overflow-hidden">
-                  <FaMusic className="text-white text-2xl" />
+                  {track.cover_path ? (
+                    <img 
+                      src={`${process.env.NEXT_PUBLIC_API_URL}${track.cover_path}`}
+                      alt={track.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <FaMusic className="text-white text-2xl" />
+                  )}
                   <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <FaPlay className="text-white text-xl" />
                   </div>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-medium truncate text-lg">{track.title}</h3>
-                  <p className="text-sm text-gray-400 truncate">{track.artist}</p>
+                  <h3 className="font-medium truncate text-lg">{track.name}</h3>
+                  <p className="text-sm text-gray-400 truncate">{track.owner_username}</p>
                 </div>
                 <div className="flex items-center gap-6">
                   <div className="text-sm text-gray-400">{track.duration}</div>
-                  <div className="text-sm text-gray-400">{track.uploadDate}</div>
+                  <div className="text-sm text-gray-400">
+                    {new Date(track.created_at).toLocaleDateString()}
+                  </div>
                   <div className="text-sm text-gray-400">{track.plays} прослушиваний</div>
                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button className="p-2 text-gray-400 hover:text-white transition-colors">
@@ -332,96 +427,95 @@ export default function ProfilePage() {
 
       {/* Upload Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-[#282828] rounded-xl p-6 w-full max-w-md shadow-2xl">
-            <h2 className="text-xl font-bold mb-4">Загрузка трека</h2>
-            <form className="space-y-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-zinc-900 p-8 rounded-xl w-full max-w-md">
+            <h2 className="text-2xl font-bold mb-6">Загрузить трек</h2>
+            
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
+                <label className="block text-sm font-medium text-gray-400 mb-2">
                   Название трека
                 </label>
                 <input
                   type="text"
-                  className="w-full bg-[#121212] rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
-                  placeholder="Введите название"
+                  value={trackName}
+                  onChange={(e) => setTrackName(e.target.value)}
+                  className="w-full bg-zinc-800/50 px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="Введите название трека"
                 />
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
-                  Исполнитель
-                </label>
-                <input
-                  type="text"
-                  className="w-full bg-[#121212] rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
-                  placeholder="Введите исполнителя"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
-                  Обложка трека
-                </label>
-                <div 
-                  className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center hover:border-purple-500 transition-colors cursor-pointer"
-                  onClick={handleCoverClick}
-                >
-                  <div className="w-32 h-32 mx-auto mb-4 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg overflow-hidden">
-                    {trackCover ? (
-                      <img 
-                        src={trackCover} 
-                        alt="Track Cover" 
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <FaMusic className="text-white text-3xl" />
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-400">
-                    Нажмите для выбора обложки
-                  </p>
-                  <input
-                    type="file"
-                    ref={coverInputRef}
-                    onChange={handleCoverChange}
-                    accept="image/*"
-                    className="hidden"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
+                <label className="block text-sm font-medium text-gray-400 mb-2">
                   Аудио файл
                 </label>
-                <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center hover:border-purple-500 transition-colors cursor-pointer">
-                  <FaMusic className="mx-auto text-gray-400 text-3xl mb-4" />
-                  <p className="text-sm text-gray-400">
-                    Перетащите аудио файл сюда или нажмите для выбора
-                  </p>
+                <input
+                  type="file"
+                  accept="audio/*"
+                  onChange={handleTrackFileChange}
+                  className="w-full bg-zinc-800/50 px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-2">
+                  Обложка (необязательно)
+                </label>
+                <div className="relative w-full aspect-square rounded-lg overflow-hidden bg-zinc-800/50">
+                  {trackCover ? (
+                    <img 
+                      src={trackCover} 
+                      alt="Track Cover Preview" 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <FaMusic className="text-gray-400 text-4xl" />
+                    </div>
+                  )}
                   <input
                     type="file"
-                    accept="audio/*"
-                    className="hidden"
+                    accept="image/*"
+                    onChange={handleTrackCoverChange}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                 </div>
               </div>
-              <div className="flex justify-end space-x-3">
+
+              {uploadError && (
+                <p className="text-red-500 text-sm">{uploadError}</p>
+              )}
+
+              <div className="flex gap-4 justify-end mt-6">
                 <button
-                  type="button"
                   onClick={() => {
                     setShowUploadModal(false);
+                    setTrackName('');
+                    setTrackFile(null);
+                    setTrackCoverFile(null);
                     setTrackCover(null);
+                    setUploadError(null);
                   }}
-                  className="px-4 py-2 rounded-lg text-gray-400 hover:text-white transition-colors"
+                  className="px-4 py-2 rounded-lg bg-zinc-800/50 text-gray-400 hover:text-white transition-colors"
                 >
                   Отмена
                 </button>
                 <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 text-white hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105"
+                  onClick={handleTrackUpload}
+                  disabled={uploadingTrack}
+                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 text-white hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Загрузить
+                  {uploadingTrack ? (
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                      <span>Загрузка...</span>
+                    </div>
+                  ) : (
+                    'Загрузить'
+                  )}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}

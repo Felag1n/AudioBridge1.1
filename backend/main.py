@@ -412,22 +412,50 @@ async def delete_track(
     
     return {"message": "Track deleted successfully"}
 
+async def enrich_track_response(track: Track, current_user: User, db: Session) -> TrackResponse:
+    # Получаем количество лайков
+    likes_count = db.query(Like).filter(Like.track_id == track.id).count()
+    
+    # Проверяем, лайкнул ли текущий пользователь трек
+    is_liked = db.query(Like).filter(
+        Like.track_id == track.id,
+        Like.username == current_user.username
+    ).first() is not None
+    
+    return TrackResponse(
+        id=track.id,
+        name=track.name,
+        owner_username=track.owner_username,
+        file_path=track.file_path,
+        cover_path=track.cover_path,
+        created_at=track.created_at,
+        plays=track.plays,
+        duration=track.duration,
+        likes_count=likes_count,
+        is_liked=is_liked
+    )
+
 @app.get("/tracks", response_model=List[TrackResponse])
 async def list_tracks(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    tracks = db.query(Track).filter(Track.owner_username == current_user.username).all()
-    
-    # Add likes count and is_liked status
-    for track in tracks:
-        track.likes_count = db.query(Like).filter(Like.track_id == track.id).count()
-        track.is_liked = db.query(Like).filter(
-            Like.track_id == track.id,
-            Like.username == current_user.username
-        ).first() is not None
-    
-    return tracks
+    tracks = db.query(Track).all()
+    return [await enrich_track_response(track, current_user, db) for track in tracks]
+
+@app.get("/tracks/{track_id}", response_model=TrackResponse)
+async def get_track(
+    track_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    track = db.query(Track).filter(Track.id == track_id).first()
+    if not track:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Track not found"
+        )
+    return await enrich_track_response(track, current_user, db)
 
 @app.post("/tracks/{track_id}/like")
 async def like_track(

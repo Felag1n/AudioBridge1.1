@@ -1,9 +1,9 @@
 "use client"
 import Link from 'next/link';
-import { FaUser, FaSignInAlt, FaUserPlus } from 'react-icons/fa';
+import { FaUser,FaSignInAlt, FaUserPlus } from 'react-icons/fa';
 import { useAuth } from '@/hooks/useAuth';
 import { useEffect, useState } from 'react';
-
+import { BsSoundwave } from "react-icons/bs";
 export default function Header() {
   const { isAuthenticated, user } = useAuth();
   const [mounted, setMounted] = useState(false);
@@ -31,7 +31,7 @@ export default function Header() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center">
-              <FaUser className="text-white text-lg" />
+              <BsSoundwave className="text-white text-lg" />
             </div>
             <span className="text-xl font-bold text-white">AudioBridge</span>
           </Link>
