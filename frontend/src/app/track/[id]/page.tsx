@@ -211,7 +211,7 @@ export default function TrackPage() {
 
         {/* Content */}
         <div className="px-8 py-6">
-          {activeTab === 'comments' && <TrackComments comments={[]} />}
+          {activeTab === 'comments' && <TrackComments trackId={id as string} />}
           
           {activeTab === 'details' && (
             <div className="space-y-6">

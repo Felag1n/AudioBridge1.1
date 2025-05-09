@@ -95,6 +95,16 @@ class Like(Base):
     username = Column(String, ForeignKey("users.username"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class Comment(Base):
+    __tablename__ = "comments"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    track_id = Column(String, ForeignKey("tracks.id"), nullable=False)
+    username = Column(String, ForeignKey("users.username"), nullable=False)
+    text = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    parent_id = Column(String, ForeignKey("comments.id"), nullable=True)
+
 # Create tables
 Base.metadata.create_all(bind=engine)
 
@@ -141,6 +151,23 @@ class TrackResponse(TrackBase):
     duration: Optional[str] = None
     likes_count: int = 0
     is_liked: bool = False
+
+    class Config:
+        from_attributes = True
+
+class CommentBase(BaseModel):
+    text: str
+
+class CommentCreate(CommentBase):
+    parent_id: Optional[str] = None
+
+class CommentResponse(CommentBase):
+    id: str
+    track_id: str
+    username: str
+    created_at: datetime
+    parent_id: Optional[str] = None
+    user: UserBase
 
     class Config:
         from_attributes = True
@@ -560,5 +587,158 @@ async def increment_play_count(
     
     track.plays += 1
     db.commit()
+    return {"message": "Play count incremented"}
+
+# Comment endpoints
+@app.post("/tracks/{track_id}/comments", response_model=CommentResponse)
+async def create_comment(
+    track_id: str,
+    comment: CommentCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Check if track exists
+    track = db.query(Track).filter(Track.id == track_id).first()
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
     
-    return {"message": "Play count incremented successfully"} 
+    # If parent_id is provided, check if parent comment exists
+    if comment.parent_id:
+        parent_comment = db.query(Comment).filter(Comment.id == comment.parent_id).first()
+        if not parent_comment:
+            raise HTTPException(status_code=404, detail="Parent comment not found")
+    
+    # Create new comment
+    new_comment = Comment(
+        track_id=track_id,
+        username=current_user.username,
+        text=comment.text,
+        parent_id=comment.parent_id
+    )
+    
+    db.add(new_comment)
+    db.commit()
+    db.refresh(new_comment)
+    
+    # Get user info for response
+    user = db.query(User).filter(User.username == current_user.username).first()
+    new_comment.user = user
+    
+    return new_comment
+
+@app.get("/tracks/{track_id}/comments", response_model=List[CommentResponse])
+async def get_comments(
+    track_id: str,
+    db: Session = Depends(get_db)
+):
+    # Check if track exists
+    track = db.query(Track).filter(Track.id == track_id).first()
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+    
+    # Get all comments for the track
+    comments = db.query(Comment).filter(Comment.track_id == track_id).all()
+    
+    # Get user info for each comment
+    for comment in comments:
+        user = db.query(User).filter(User.username == comment.username).first()
+        comment.user = user
+    
+    return comments
+
+@app.delete("/tracks/{track_id}/comments/{comment_id}")
+async def delete_comment(
+    track_id: str,
+    comment_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Check if track exists
+    track = db.query(Track).filter(Track.id == track_id).first()
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+    
+    # Get comment
+    comment = db.query(Comment).filter(
+        Comment.id == comment_id,
+        Comment.track_id == track_id
+    ).first()
+    
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    
+    # Check if user is the comment owner
+    if comment.username != current_user.username:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this comment")
+    
+    # Delete comment
+    db.delete(comment)
+    db.commit()
+    
+    return {"message": "Comment deleted successfully"}
+
+# Search endpoints
+@app.get("/search/users", response_model=List[UserBase])
+async def search_users(
+    query: str,
+    db: Session = Depends(get_db)
+):
+    if not query:
+        return []
+    
+    # Search in username, nickname, and full_name
+    users = db.query(User).filter(
+        (User.username.ilike(f"%{query}%")) |
+        (User.nickname.ilike(f"%{query}%")) |
+        (User.full_name.ilike(f"%{query}%"))
+    ).all()
+    
+    return users
+
+@app.get("/search/tracks", response_model=List[TrackResponse])
+async def search_tracks(
+    query: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not query:
+        return []
+    
+    # Search in track name and owner username
+    tracks = db.query(Track).filter(
+        (Track.name.ilike(f"%{query}%")) |
+        (Track.owner_username.ilike(f"%{query}%"))
+    ).all()
+    
+    # Enrich track responses with likes count and is_liked status
+    return [await enrich_track_response(track, current_user, db) for track in tracks]
+
+@app.get("/search", response_model=dict)
+async def search_all(
+    query: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not query:
+        return {"users": [], "tracks": []}
+    
+    # Search users
+    users = db.query(User).filter(
+        (User.username.ilike(f"%{query}%")) |
+        (User.nickname.ilike(f"%{query}%")) |
+        (User.full_name.ilike(f"%{query}%"))
+    ).all()
+    
+    # Search tracks
+    tracks = db.query(Track).filter(
+        (Track.name.ilike(f"%{query}%")) |
+        (Track.owner_username.ilike(f"%{query}%"))
+    ).all()
+    
+    # Enrich track responses
+    enriched_tracks = [await enrich_track_response(track, current_user, db) for track in tracks]
+    
+    return {
+        "users": users,
+        "tracks": enriched_tracks
+    } 
