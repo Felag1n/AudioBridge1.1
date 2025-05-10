@@ -18,6 +18,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru">
+      <head>
+        <link rel="icon" href="/favicon.ico" type="image/x-icon" />
+      </head>
       <body className={inter.className}>
         <AuthProvider>
           <AudioProvider>

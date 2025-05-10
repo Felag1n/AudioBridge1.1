@@ -9,7 +9,7 @@ import os
 from dotenv import load_dotenv
 import shutil
 import uuid
-from sqlalchemy import create_engine, Column, String, DateTime, ForeignKey, Boolean, Integer, func
+from sqlalchemy import create_engine, Column, String, DateTime, ForeignKey, Boolean, Integer, func, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from fastapi.middleware.cors import CORSMiddleware
@@ -105,6 +105,18 @@ class Comment(Base):
     text = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     parent_id = Column(String, ForeignKey("comments.id"), nullable=True)
+
+class TrackPlay(Base):
+    __tablename__ = "track_plays"
+    
+    id = Column(String, primary_key=True)
+    track_id = Column(String, ForeignKey("tracks.id"), nullable=False)
+    username = Column(String, ForeignKey("users.username"), nullable=False)
+    played_at = Column(DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        UniqueConstraint('track_id', 'username', name='unique_track_play'),
+    )
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -480,11 +492,19 @@ async def enrich_track_response(track: Track, current_user: User, db: Session) -
 
 @app.get("/tracks", response_model=List[TrackResponse])
 async def list_tracks(
+    owner_username: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    tracks = db.query(Track).all()
-    return [await enrich_track_response(track, current_user, db) for track in tracks]
+    print(f"Fetching tracks for owner_username: {owner_username}")
+    query = db.query(Track)
+    if owner_username:
+        query = query.filter(Track.owner_username == owner_username)
+    tracks = query.all()
+    print(f"Found {len(tracks)} tracks")
+    enriched_tracks = [await enrich_track_response(track, current_user, db) for track in tracks]
+    print(f"Enriched tracks: {[track.name for track in enriched_tracks]}")
+    return enriched_tracks
 
 @app.get("/tracks/{track_id}", response_model=TrackResponse)
 async def get_track(
@@ -555,16 +575,57 @@ async def get_liked_tracks(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    liked_tracks = db.query(Track).join(Like).filter(
-        Like.username == current_user.username
-    ).all()
+    print(f"Fetching liked tracks for user: {current_user.username}")
     
-    # Add likes count and is_liked status
-    for track in liked_tracks:
-        track.likes_count = db.query(Like).filter(Like.track_id == track.id).count()
-        track.is_liked = True
+    try:
+        # Get all tracks that the user has liked
+        liked_tracks = db.query(Track).join(Like).filter(
+            Like.username == current_user.username
+        ).all()
+        
+        print(f"Found {len(liked_tracks)} liked tracks")
+        
+        if not liked_tracks:
+            print("No liked tracks found, returning empty list")
+            return []
+        
+        # Enrich track responses with likes count and is_liked status
+        enriched_tracks = [await enrich_track_response(track, current_user, db) for track in liked_tracks]
+        print(f"Enriched tracks: {[track.name for track in enriched_tracks]}")
+        
+        return enriched_tracks
+    except Exception as e:
+        print(f"Error fetching liked tracks: {str(e)}")
+        return []
+
+@app.get("/users/{username}/liked", response_model=List[TrackResponse])
+async def get_user_liked_tracks(
+    username: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    print(f"Fetching liked tracks for user: {username}")
     
-    return liked_tracks
+    try:
+        # Get all tracks that the user has liked
+        liked_tracks = db.query(Track).join(Like).filter(
+            Like.username == username
+        ).all()
+        
+        print(f"Found {len(liked_tracks)} liked tracks")
+        
+        if not liked_tracks:
+            print("No liked tracks found, returning empty list")
+            return []
+        
+        # Enrich track responses with likes count and is_liked status
+        enriched_tracks = [await enrich_track_response(track, current_user, db) for track in liked_tracks]
+        print(f"Enriched tracks: {[track.name for track in enriched_tracks]}")
+        
+        return enriched_tracks
+    except Exception as e:
+        print(f"Error fetching liked tracks: {str(e)}")
+        return []
 
 # Statistics endpoints
 @app.get("/users/me/stats")
@@ -591,19 +652,58 @@ async def get_user_stats(
         "total_likes": total_likes
     }
 
+@app.get("/users/{username}/stats")
+async def get_user_stats_by_username(
+    username: str,
+    db: Session = Depends(get_db)
+):
+    # Get total tracks
+    total_tracks = db.query(func.count(Track.id)).filter(Track.owner_username == username).scalar()
+    
+    # Get total plays
+    total_plays = db.query(func.sum(Track.plays)).filter(Track.owner_username == username).scalar() or 0
+    
+    # Get total likes
+    total_likes = db.query(func.count(Like.id)).join(Track).filter(Track.owner_username == username).scalar()
+    
+    return {
+        "total_tracks": total_tracks,
+        "total_plays": total_plays,
+        "total_likes": total_likes
+    }
+
 # Track playback endpoint
 @app.post("/tracks/{track_id}/play")
 async def increment_play_count(
     track_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     track = db.query(Track).filter(Track.id == track_id).first()
     if not track:
         raise HTTPException(status_code=404, detail="Track not found")
     
-    track.plays += 1
-    db.commit()
-    return {"message": "Play count incremented"}
+    # Check if user has already played this track
+    existing_play = db.query(TrackPlay).filter(
+        TrackPlay.track_id == track_id,
+        TrackPlay.username == current_user.username
+    ).first()
+    
+    if not existing_play:
+        # Create new play record
+        play = TrackPlay(
+            id=str(uuid.uuid4()),
+            track_id=track_id,
+            username=current_user.username
+        )
+        db.add(play)
+        
+        # Increment play count
+        track.plays += 1
+        db.commit()
+        return {"message": "Play count incremented"}
+    
+    return {"message": "Track already played by this user"}
 
 # Comment endpoints
 @app.post("/tracks/{track_id}/comments", response_model=CommentResponse)

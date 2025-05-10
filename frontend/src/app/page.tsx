@@ -1,6 +1,6 @@
 "use client"
 import { useState, useEffect } from 'react';
-import { FaPlay, FaHeart, FaShare, FaEllipsisH, FaSortAmountDown, FaSortAmountUp } from 'react-icons/fa';
+import { FaPlay, FaHeart, FaShare, FaEllipsisH, FaSortAmountDown, FaSortAmountUp, FaPause } from 'react-icons/fa';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import PlayerBar from '@/components/PlayerBar';
@@ -8,6 +8,7 @@ import { SearchModal } from '@/components/SearchModal';
 import { apiClient, Track as ApiTrack } from '@/lib/api';
 import { useAudio } from '@/contexts/AudioContext';
 import { AuthGuard } from '@/components/AuthGuard';
+import { useRouter } from 'next/navigation';
 
 type SortField = 'likes' | 'date' | 'plays';
 type SortOrder = 'asc' | 'desc';
@@ -20,7 +21,8 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>('likes');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
-  const { playTrack } = useAudio();
+  const { playTrack, currentTrack } = useAudio();
+  const router = useRouter();
 
   useEffect(() => {
     fetchTracks();
@@ -60,7 +62,7 @@ export default function Home() {
 
   const handlePlay = async (track: ApiTrack) => {
     try {
-      await apiClient.incrementPlayCount(track.id);
+      const response = await apiClient.incrementPlayCount(track.id);
       const audioTrack = {
         id: track.id,
         name: track.name,
@@ -70,10 +72,16 @@ export default function Home() {
         plays: track.plays
       };
       playTrack(audioTrack);
-      fetchTracks();
+      if (response.message === "Play count incremented") {
+        fetchTracks();
+      }
     } catch (error) {
       console.error('Error playing track:', error);
     }
+  };
+
+  const handleTrackClick = (track: ApiTrack) => {
+    router.push(`/track/${track.id}`);
   };
 
   const sortedTracks = [...tracks].sort((a, b) => {
@@ -175,7 +183,10 @@ export default function Home() {
                     key={track.id}
                     className="group relative bg-zinc-800/50 rounded-lg p-4 hover:bg-zinc-800/70 transition-colors flex flex-col"
                   >
-                    <div className="aspect-square rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 mb-4 overflow-hidden">
+                    <div 
+                      className="aspect-square rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 mb-4 overflow-hidden cursor-pointer"
+                      onClick={() => handleTrackClick(track)}
+                    >
                       {track.cover_path && (
                         <img 
                           src={`${process.env.NEXT_PUBLIC_API_URL}${track.cover_path}`}
@@ -185,10 +196,21 @@ export default function Home() {
                       )}
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
-                          onClick={() => handlePlay(track)}
-                          className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePlay(track);
+                          }}
+                          className={`w-12 h-12 rounded-full ${
+                            currentTrack?.id === track.id 
+                              ? 'bg-purple-600 hover:bg-purple-700' 
+                              : 'bg-white/20 hover:bg-white/30'
+                          } backdrop-blur-sm flex items-center justify-center transition-colors`}
                         >
-                          <FaPlay className="text-white text-xl" />
+                          {currentTrack?.id === track.id ? (
+                            <FaPause className="text-white text-xl" />
+                          ) : (
+                            <FaPlay className="text-white text-xl" />
+                          )}
                         </button>
                       </div>
                     </div>

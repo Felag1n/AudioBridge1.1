@@ -37,7 +37,8 @@ interface UserStats {
 }
 
 export default function ProfilePage() {
-  const { username } = useParams();
+  const params = useParams();
+  const username = params.username as string;
   const router = useRouter();
   const { isAuthenticated, user: currentUser } = useAuth();
   const { playTrack, isPlaying, togglePlayPause, currentTrack } = useAudio();
@@ -51,13 +52,17 @@ export default function ProfilePage() {
   const isOwnProfile = currentUser?.username === username;
 
   useEffect(() => {
-    fetchUserData();
-  }, [username]);
+    if (username) {
+      console.log('Fetching data for username:', username);
+      fetchUserData();
+    }
+  }, [username, isOwnProfile]);
 
   const fetchUserData = async () => {
     try {
       setIsLoading(true);
       setError(null);
+      console.log('Fetching user data for:', username);
 
       // Fetch user profile
       const userResponse = await fetch(
@@ -79,36 +84,50 @@ export default function ProfilePage() {
       }
 
       const userData = await userResponse.json();
+      console.log('User data received:', userData);
       setUser(userData);
 
       // Fetch user tracks
-      const tracksResponse = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/tracks?owner_username=${username}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-          }
+      const tracksUrl = `${process.env.NEXT_PUBLIC_API_URL}/tracks?owner_username=${encodeURIComponent(username)}`;
+      console.log('Fetching tracks from:', tracksUrl);
+      const tracksResponse = await fetch(tracksUrl, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         }
-      );
+      });
       if (tracksResponse.ok) {
         const tracksData = await tracksResponse.json();
-        setTracks(tracksData);
+        console.log('Tracks data received:', tracksData);
+        setTracks(tracksData || []);
+      } else {
+        console.error('Error fetching tracks:', await tracksResponse.text());
+        setTracks([]);
       }
 
-      // Fetch liked tracks only for own profile
-      if (isOwnProfile) {
-        const likedTracksResponse = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/tracks/liked`,
+      // Fetch liked tracks for any user
+      console.log('Fetching liked tracks for user:', username);
+      try {
+        const likedResponse = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/users/${encodeURIComponent(username)}/liked`,
           {
             headers: {
               'Authorization': `Bearer ${localStorage.getItem('access_token')}`
             }
           }
         );
-        if (likedTracksResponse.ok) {
-          const likedTracksData = await likedTracksResponse.json();
-          setLikedTracks(likedTracksData);
+        
+        if (likedResponse.ok) {
+          const likedData = await likedResponse.json();
+          console.log('Liked tracks data received:', likedData);
+          setLikedTracks(Array.isArray(likedData) ? likedData : []);
+        } else {
+          const errorText = await likedResponse.text();
+          console.error('Error fetching liked tracks:', errorText);
+          setLikedTracks([]);
         }
+      } catch (error) {
+        console.error('Error fetching liked tracks:', error);
+        setLikedTracks([]);
       }
 
       // Fetch user stats
@@ -122,11 +141,18 @@ export default function ProfilePage() {
       );
       if (statsResponse.ok) {
         const statsData = await statsResponse.json();
+        console.log('Stats data received:', statsData);
         setStats(statsData);
+      } else {
+        console.error('Error fetching stats:', await statsResponse.text());
+        setStats({ total_tracks: 0, total_plays: 0, total_likes: 0 });
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
       setError('Ошибка при загрузке данных');
+      setTracks([]);
+      setLikedTracks([]);
+      setStats({ total_tracks: 0, total_plays: 0, total_likes: 0 });
     } finally {
       setIsLoading(false);
     }
@@ -337,14 +363,12 @@ export default function ProfilePage() {
             >
               Треки
             </button>
-            {isOwnProfile && (
-              <button 
-                className={`py-4 text-sm font-medium ${activeTab === 'likes' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-gray-400 hover:text-white'}`}
-                onClick={() => setActiveTab('likes')}
-              >
-                Лайки
-              </button>
-            )}
+            <button 
+              className={`py-4 text-sm font-medium ${activeTab === 'likes' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-gray-400 hover:text-white'}`}
+              onClick={() => setActiveTab('likes')}
+            >
+              Лайки
+            </button>
           </div>
         </div>
 

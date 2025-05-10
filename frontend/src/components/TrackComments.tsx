@@ -151,6 +151,7 @@ export default function TrackComments({ trackId }: TrackCommentsProps) {
               </div>
             )}
           </div>
+          
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
               <span 
@@ -185,6 +186,61 @@ export default function TrackComments({ trackId }: TrackCommentsProps) {
                 </button>
               )}
             </div>
+
+            {/* Reply Form */}
+            {replyTo === comment.id && (
+              <div className="mt-4">
+                <textarea
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder="Написать ответ..."
+                  className="w-full bg-[#181818] text-white rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  rows={3}
+                />
+                <div className="flex justify-end gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReplyTo(null);
+                      setReplyText('');
+                    }}
+                    className="px-4 py-2 text-sm text-gray-400 hover:text-white"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!replyText.trim()) return;
+                      try {
+                        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks/${trackId}/comments`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                          },
+                          body: JSON.stringify({
+                            text: replyText,
+                            parent_id: comment.id
+                          })
+                        });
+
+                        if (response.ok) {
+                          setReplyTo(null);
+                          setReplyText('');
+                          fetchComments();
+                        }
+                      } catch (error) {
+                        console.error('Error posting reply:', error);
+                      }
+                    }}
+                    className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+                  >
+                    Ответить
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -194,7 +250,7 @@ export default function TrackComments({ trackId }: TrackCommentsProps) {
   return (
     <div className="space-y-6">
       {/* Comment Form */}
-      {isAuthenticated && (
+      {isAuthenticated && !replyTo && (
         <form onSubmit={handleSubmitComment} className="space-y-4">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-full overflow-hidden">
@@ -212,30 +268,18 @@ export default function TrackComments({ trackId }: TrackCommentsProps) {
             </div>
             <div className="flex-1">
               <textarea
-                value={replyTo ? replyText : newComment}
-                onChange={(e) => replyTo ? setReplyText(e.target.value) : setNewComment(e.target.value)}
-                placeholder={replyTo ? "Написать ответ..." : "Написать комментарий..."}
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="Написать комментарий..."
                 className="w-full bg-[#181818] text-white rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500"
                 rows={3}
               />
               <div className="flex justify-end gap-2 mt-2">
-                {replyTo && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setReplyTo(null);
-                      setReplyText('');
-                    }}
-                    className="px-4 py-2 text-sm text-gray-400 hover:text-white"
-                  >
-                    Отмена
-                  </button>
-                )}
                 <button
                   type="submit"
                   className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
                 >
-                  {replyTo ? 'Ответить' : 'Отправить'}
+                  Отправить
                 </button>
               </div>
             </div>

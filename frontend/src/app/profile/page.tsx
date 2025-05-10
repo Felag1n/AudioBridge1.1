@@ -236,7 +236,13 @@ export default function ProfilePage() {
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.includes('image/')) {
-        setUploadError('Пожалуйста, выберите изображение');
+        setUploadError('Пожалуйста, выберите изображение в формате JPG, JPEG или PNG');
+        return;
+      }
+      // Проверяем расширение файла
+      const fileExtension = file.name.split('.').pop()?.toLowerCase();
+      if (!['jpg', 'jpeg', 'png'].includes(fileExtension || '')) {
+        setUploadError('Поддерживаются только форматы: JPG, JPEG, PNG');
         return;
       }
       setTrackCoverFile(file);
@@ -613,11 +619,12 @@ export default function ProfilePage() {
                   )}
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/jpg,image/png"
                     onChange={handleTrackCoverChange}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                 </div>
+                <p className="text-xs text-gray-500 mt-1">Поддерживаемые форматы: JPG, JPEG, PNG</p>
               </div>
 
               {uploadError && (
