@@ -149,6 +149,9 @@ export const apiClient = {
       },
       body: formData,
     });
+    if (!response.ok) {
+      throw new Error('Failed to upload track');
+    }
     return response.json();
   },
 

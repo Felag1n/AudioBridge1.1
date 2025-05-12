@@ -9,6 +9,7 @@ import Sidebar from '@/components/Sidebar';
 import { SearchModal } from '@/components/SearchModal';
 import PlayerBar from '@/components/PlayerBar';
 import { useAudio } from '@/contexts/AudioContext';
+import axios from 'axios';
 
 interface Track {
   id: string;
@@ -76,7 +77,7 @@ export default function ProfilePage() {
         setAvatar(userData.avatar_path ? `${process.env.NEXT_PUBLIC_API_URL}${userData.avatar_path}` : '/images/default-avatar.jpg');
 
         // Загружаем треки пользователя
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks?owner_username=${userData.username}`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -119,7 +120,7 @@ export default function ProfilePage() {
 
     const fetchTracks = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks?owner_username=${userData?.username}`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('access_token')}`
           }
@@ -257,45 +258,31 @@ export default function ProfilePage() {
   };
 
   const handleTrackUpload = async () => {
-    if (!trackFile || !trackName) {
-      setUploadError('Пожалуйста, укажите название и выберите файл');
+    if (!trackFile) {
+      setUploadError('Пожалуйста, выберите аудио файл');
       return;
     }
 
     try {
-      setUploadingTrack(true);
+      setIsUploading(true);
       setUploadError(null);
 
-      const formData = new FormData();
-      formData.append('file', trackFile);
-      formData.append('name', trackName);
-      if (trackCoverFile) {
-        formData.append('cover', trackCoverFile);
+      const response = await apiClient.uploadTrack(trackFile, trackCoverFile, trackName);
+
+      if (response) {
+        setTracks([...tracks, response]);
+        setShowUploadModal(false);
+        setTrackName('');
+        setTrackFile(null);
+        setTrackCoverFile(null);
+        setTrackCover(null);
       }
-
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks/upload`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error('Ошибка при загрузке трека');
-      }
-
-      const newTrack = await response.json();
-      setTracks([newTrack, ...tracks]);
-      setShowUploadModal(false);
-      setTrackName('');
-      setTrackFile(null);
-      setTrackCoverFile(null);
     } catch (error) {
       console.error('Error uploading track:', error);
-      setUploadError('Произошла ошибка при загрузке трека');
+      setUploadError('Ошибка при загрузке трека. Пожалуйста, попробуйте снова.');
     } finally {
-      setUploadingTrack(false);
+      setIsUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -306,25 +293,11 @@ export default function ProfilePage() {
     setIsUploading(true);
     setUploadProgress(0);
 
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tracks/upload`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-        },
-        body: formData,
-        onUploadProgress: (progressEvent) => {
-          const progress = (progressEvent.loaded / progressEvent.total) * 100;
-          setUploadProgress(progress);
-        },
-      });
+      const response = await apiClient.uploadTrack(file, null, file.name);
 
-      if (response.ok) {
-        const newTrack = await response.json();
-        setTracks([...tracks, newTrack]);
+      if (response) {
+        setTracks([...tracks, response]);
       }
     } catch (error) {
       console.error('Error uploading track:', error);
@@ -647,10 +620,10 @@ export default function ProfilePage() {
                 </button>
                 <button
                   onClick={handleTrackUpload}
-                  disabled={uploadingTrack}
+                  disabled={isUploading}
                   className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 text-white hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {uploadingTrack ? (
+                  {isUploading ? (
                     <div className="flex items-center gap-2">
                       <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
                       <span>Загрузка...</span>
