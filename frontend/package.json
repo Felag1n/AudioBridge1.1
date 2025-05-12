@@ -30,6 +30,14 @@
     "eslint": "^9",
     "eslint-config-next": "15.3.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "@radix-ui/react-dialog": "^1.1.13",
+    "@radix-ui/react-tabs": "^1.1.11",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.507.0",
+    "tailwind-merge": "^3.2.0",
+    "zustand": "^5.0.4"
+
   }
 }
