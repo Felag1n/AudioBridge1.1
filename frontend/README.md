@@ -34,3 +34,26 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Структура директорий
+
+```
+frontend/
+├── src/                    # Исходный код приложения
+│   ├── app/               # Next.js App Router директория
+│   ├── components/        # React компоненты
+│   ├── contexts/          # React контексты
+│   ├── hooks/             # Пользовательские React хуки
+│   └── lib/               # Вспомогательные функции и утилиты
+├── public/                # Статические файлы
+├── .next/                 # Сборка Next.js
+├── node_modules/          # Зависимости проекта
+├── package.json           # Конфигурация проекта и зависимости
+├── package-lock.json      # Фиксированные версии зависимостей
+├── next.config.js         # Конфигурация Next.js
+├── next.config.ts         # TypeScript конфигурация Next.js
+├── tsconfig.json          # Конфигурация TypeScript
+├── postcss.config.mjs     # Конфигурация PostCSS
+├── eslint.config.mjs      # Конфигурация ESLint
+└── README.md             # Документация проекта
+```

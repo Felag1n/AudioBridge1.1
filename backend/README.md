@@ -19,6 +19,26 @@ SECRET_KEY=your-secure-secret-key-here
 uvicorn main:app --reload
 ```
 
+## Структура директорий
+
+```
+backend/
+├── app/                    # Основной пакет приложения
+│   ├── core/              # Основной функционал и конфигурации
+│   ├── database/          # Модели базы данных и подключения
+│   ├── models/            # SQLAlchemy модели
+│   ├── routes/            # Обработчики API маршрутов
+│   ├── routers/           # API роутеры
+│   ├── schemas/           # Pydantic схемы
+│   ├── utils/             # Вспомогательные функции
+│   └── main.py            # Инициализация приложения
+├── uploads/               # Директория для загруженных файлов
+├── venv/                  # Виртуальное окружение Python
+├── main.py               # Точка входа FastAPI приложения
+├── requirements.txt      # Зависимости проекта
+└── README.md            # Документация проекта
+```
+
 ## API Endpoints
 
 ### Register a new user
